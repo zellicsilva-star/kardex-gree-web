@@ -10,7 +10,7 @@ import io
 
 # --- CONFIGURAÇÕES DE ID ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
 # --- IMPORTANTE: COLOQUE SEU E-MAIL AQUI ---
