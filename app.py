@@ -118,8 +118,8 @@ if codigo_busca:
         # Formata data (remove horário)
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # COLUNA TIPO MOV. AO LADO DE VALOR MOV.
-        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
+        # COLUNA REQUISIÇÃO AO LADO ESQUERDO DE RESPONSÁVEL
+        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
         hist_final = hist[colunas_v]
 
         # Lógica de Cores
