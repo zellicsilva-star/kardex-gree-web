@@ -71,6 +71,9 @@ if codigo_busca:
     # Busca dados
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
+    
+    # --- AJUSTE PARA NÃO ENGOLIR O ZERO: Força a coluna CÓDIGO a ser texto ---
+    df['CÓDIGO'] = df['CÓDIGO'].astype(str).str.strip()
     item_rows = df[df['CÓDIGO'] == codigo_busca]
     
     if not item_rows.empty:
@@ -118,9 +121,10 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
+                    # --- AJUSTE PARA NÃO ENGOLIR O ZERO: Adicionado o apóstrofo antes do código ---
                     nova_linha = [
                         dt_planilha, 
-                        codigo_busca, 
+                        f"'{codigo_busca}", 
                         item_atual['DESCRIÇÃO'].values[0],
                         str(qtd).replace('.', ','), 
                         tipo, 
