@@ -39,7 +39,7 @@ except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO DE UPLOAD (Mantida na estrutura, mas não será chamada pelo botão) ---
+# --- FUNÇÃO DE UPLOAD ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
@@ -64,7 +64,7 @@ st.title("📦 GREE - Kardex Digital Web")
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 
-# O campo de texto agora aceita o valor vindo da URL como padrão
+# O campo de busca recebe o valor vindo do QR Code (URL) como padrão
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
 if codigo_busca:
@@ -78,15 +78,16 @@ if codigo_busca:
         
         col1, col2 = st.columns(2)
         with col1:
-            # --- ALTERAÇÃO AQUI: Mudado de ### para ##### para diminuir a fonte ---
+            # Exibição da Descrição com fonte reduzida
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
+            # Exibição do Saldo
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
         with col2:
-            # Tenta pegar a foto (compatível com link ou base64 antigo)
+            # Visualização da Foto
             dado_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             
             if dado_foto and len(str(dado_foto)) > 5:
@@ -121,7 +122,7 @@ if codigo_busca:
                         dt_planilha, 
                         codigo_busca, 
                         item_atual['DESCRIÇÃO'].values[0],
-                        qtd, 
+                        str(qtd).replace('.', ','), 
                         tipo, 
                         str(round(novo_saldo, 2)).replace('.', ','),
                         doc, 
