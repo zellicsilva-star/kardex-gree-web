@@ -28,13 +28,13 @@ def conectar():
 
 sheet, drive_service = conectar()
 
-# --- FUNÇÃO DE UPLOAD ---
+# --- FUNÇÃO DE UPLOAD (MODO DIAGNÓSTICO) ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # CORREÇÃO AQUI: Adicionado supportsAllDrives=True para garantir permissão de escrita
+        # Tenta criar o arquivo
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -43,7 +43,9 @@ def upload_foto(arquivo, codigo):
         ).execute()
         
         return f"https://drive.google.com/uc?id={file.get('id')}"
-    except Exception:
+    except Exception as e:
+        # AQUI ESTÁ A MUDANÇA: Mostra o erro real na tela
+        st.error(f"❌ ERRO REAL DO GOOGLE: {e}")
         return None
 
 # --- TELA PRINCIPAL ---
@@ -80,7 +82,7 @@ if codigo_busca:
                         st.success("Foto salva com sucesso!")
                         st.rerun()
                     else:
-                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA.")
+                        st.warning("Não foi possível salvar a foto. Veja a mensagem de erro acima (ERRO REAL DO GOOGLE).")
 
         st.divider()
 
