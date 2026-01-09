@@ -50,34 +50,40 @@ st.title("📦 GREE - Kardex Digital Web")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
+    # Busca dados atualizados da planilha
     dados = sheet.get_all_values()
-    df = pd.DataFrame(dados[1:], columns=dados[0])
+    cabecalhos = [str(c).strip().upper() for c in dados[0]]
+    df = pd.DataFrame(dados[1:], columns=cabecalhos)
     
-    # Limpeza de cabeçalhos
-    df.columns = df.columns.str.strip()
-    
-    # Filtra o item
+    # Filtra o item ignorando espaços
     item_rows = df[df['CÓDIGO'].str.strip() == codigo_busca]
     
     if not item_rows.empty:
         # Pega a linha mais recente
         item_atual = item_rows.tail(1)
+        # Índice da linha na planilha original (dados tem cabeçalho, então +1)
+        idx_original = item_atual.index[0] + 1 
         
         col1, col2 = st.columns(2)
         with col1:
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             st.write(f"**Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
             
-            # --- CORREÇÃO DA LOCALIZAÇÃO (COLUNA J) ---
-            # Tenta pelo nome exato, se não encontrar ou estiver vazio, pega pelo índice da Coluna J (9)
-            if 'LOCALIZAÇÃO' in item_atual.columns and item_atual['LOCALIZAÇÃO'].values[0].strip() != "":
+            # --- BUSCA ROBUSTA DA LOCALIZAÇÃO (COLUNA J / ÍNDICE 9) ---
+            loc_val = "Não encontrada"
+            if 'LOCALIZAÇÃO' in item_atual.columns:
                 loc_val = item_atual['LOCALIZAÇÃO'].values[0]
-            else:
-                # Localiza a linha original nos dados brutos para pegar a coluna J com precisão
-                linha_index = item_atual.index[0]
-                loc_val = dados[linha_index + 1][9] if len(dados[linha_index + 1]) > 9 else "N/A"
+            elif 'LOCALIZACAO' in item_atual.columns:
+                loc_val = item_atual['LOCALIZACAO'].values[0]
             
-            st.write(f"**Localização:** {loc_val}")
+            # Se ainda estiver vazio, força a leitura da 10ª coluna (índice 9)
+            if not loc_val or str(loc_val).strip() == "":
+                try:
+                    loc_val = dados[idx_original][9] 
+                except:
+                    loc_val = "N/A"
+            
+            st.info(f"📍 **Localização:** {loc_val}")
         
         with col2:
             link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
@@ -88,41 +94,67 @@ if codigo_busca:
                 if nova_foto:
                     url = upload_foto(nova_foto, codigo_busca)
                     if url:
-                        cell = sheet.find(codigo_busca)
-                        sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva!")
-                        st.rerun()
+                        try:
+                            cell = sheet.find(codigo_busca)
+                            sheet.update_cell(cell.row, 11, url) 
+                            st.success("Foto salva!")
+                            st.rerun()
+                        except:
+                            st.error("Erro ao vincular foto na planilha.")
 
         st.divider()
         
         with st.expander("📝 REGISTRAR MOVIMENTAÇÃO"):
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
-            qtd = st.number_input("Quantidade", min_value=0.0)
+            qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento") and resp:
-                val_saldo = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
-                saldo_ant = float(val_saldo) if val_saldo else 0.0
-                
-                novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
-                data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
-                
-                # Registra mantendo a Localização na Coluna J
-                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", loc_val, link_foto or ""])
-                st.success("Lançado!")
-                st.rerun()
+                try:
+                    # Tratamento numérico do saldo
+                    val_saldo = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
+                    saldo_ant = float(val_saldo) if val_saldo and val_saldo != "" else 0.0
+                    
+                    if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
+                    elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
+                    else: novo_saldo = qtd # Inventário
+                    
+                    data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
+                    
+                    # Montagem da linha para o Google Sheets (convertendo tudo para string para evitar erros)
+                    nova_linha = [
+                        str(data_p), 
+                        str(codigo_busca), 
+                        str(item_atual['DESCRIÇÃO'].values[0]), 
+                        str(qtd), 
+                        str(tipo), 
+                        str(round(novo_saldo, 2)).replace('.', ','), 
+                        "", # Requisição
+                        str(resp), 
+                        "", # Armazém
+                        str(loc_val), 
+                        str(link_foto or "")
+                    ]
+                    
+                    # EXECUÇÃO DO UPLOAD
+                    sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
+                    st.success("✅ Movimentação registrada no Google Sheets!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
 
         # --- HISTÓRICO ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
-        hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
+        # Garante que as colunas existam para o histórico
+        colunas_v = [c for c in ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL'] if c in df.columns]
         
-        def colorir(row):
-            cor = 'color: #d32f2f' if row['TIPO MOV.'] == 'SAÍDA' else 'color: #2e7d32' if row['TIPO MOV.'] == 'ENTRADA' else ''
-            return [f'{cor}; font-weight: bold'] * len(row)
-
-        st.dataframe(hist[colunas_v].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
+        if not hist.empty:
+            def colorir(row):
+                cor = 'color: #d32f2f' if row.get('TIPO MOV.') == 'SAÍDA' else 'color: #2e7d32' if row.get('TIPO MOV.') == 'ENTRADA' else ''
+                return [f'{cor}; font-weight: bold'] * len(row)
+            
+            st.dataframe(hist[colunas_v].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
     else:
         st.error("Código não encontrado.")
