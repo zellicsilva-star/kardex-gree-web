@@ -36,12 +36,24 @@ except Exception as e:
 
 def upload_foto(arquivo, codigo):
     try:
-        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
+        # metadata configurado para evitar erro de cota (storageQuotaExceeded)
+        file_metadata = {
+            'name': f"foto_{codigo}.png", 
+            'parents': [ID_PASTA_FOTOS]
+        }
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        
+        # O segredo está em garantir que o arquivo seja criado dentro da pasta compartilhada
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id',
+            supportsAllDrives=True # Suporte para drives compartilhados/pastas com permissão
+        ).execute()
+        
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception as e:
-        st.error(f"Erro ao subir para o Drive: {e}") # Mostra o erro real
+        st.error(f"Erro técnico: {e}")
         return None
 
 # --- INTERFACE ---
@@ -71,14 +83,10 @@ if codigo_busca:
                 if nova_foto:
                     url = upload_foto(nova_foto, codigo_busca)
                     if url:
-                        try:
-                            # Tenta encontrar a linha exata para gravar o link
-                            cell = sheet.find(codigo_busca)
-                            sheet.update_cell(cell.row, 11, url) 
-                            st.success("Foto salva na planilha e no Drive!")
-                            st.rerun()
-                        except:
-                            st.warning("Foto subiu ao Drive, mas não gravou o link na planilha. Verifique as colunas.")
+                        cell = sheet.find(codigo_busca)
+                        sheet.update_cell(cell.row, 11, url) 
+                        st.success("Foto salva com sucesso!")
+                        st.rerun()
 
         st.divider()
         
@@ -96,17 +104,16 @@ if codigo_busca:
                 novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                 data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                 
-                # DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
                 sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", "", link_foto or ""])
                 st.success("Lançado!")
                 st.rerun()
 
-        # --- HISTÓRICO ATUALIZADO (ORDEM SOLICITADA) ---
+        # --- HISTÓRICO COM COLUNAS LADO A LADO ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # Ordem: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
+        # NOVA ORDEM: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
         
         def colorir(row):
