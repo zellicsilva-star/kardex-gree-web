@@ -59,7 +59,13 @@ def upload_foto(arquivo, codigo):
 
 # --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
-codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
+
+# --- LÓGICA DE QR CODE: Captura o código da URL se existir ---
+query_params = st.query_params
+codigo_url = query_params.get("codigo", "")
+
+# O campo de texto agora aceita o valor vindo da URL como padrão
+codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
 if codigo_busca:
     # Busca dados
