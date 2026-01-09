@@ -8,37 +8,45 @@ import datetime
 import pytz
 import io
 
-# --- CONFIGURAÇÕES DE ID ---
+# --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
+# ATUALIZADO: ID DA PASTA NOVA (FOTOS_KARDEX_NOVA) CONFIRMADO NO SEU PRINT
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" 
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-
-# --- IMPORTANTE: COLOQUE SEU E-MAIL AQUI ---
-# O robô vai passar a foto para este e-mail para não ocupar espaço dele
-SEU_EMAIL_DONO_DRIVE = "zellic.silva@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
-# --- CONEXÃO COM GOOGLE SERVICES ---
+# --- CONEXÃO ---
 @st.cache_resource
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
+    if "gcp_service_account" not in st.secrets:
+        st.error("Credenciais não encontradas nos Secrets.")
+        st.stop()
+        
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive = build('drive', 'v3', credentials=creds)
+    
     return planilha, drive
 
-sheet, drive_service = conectar()
+try:
+    sheet, drive_service = conectar()
+except Exception as e:
+    st.error(f"Erro de Conexão: {e}")
+    st.stop()
 
-# --- FUNÇÃO DE UPLOAD CORRIGIDA ---
+# --- FUNÇÃO DE UPLOAD ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # 1. Cria o arquivo (Upload inicial)
+        # Faz o upload usando o espaço que você acabou de contratar
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -46,32 +54,17 @@ def upload_foto(arquivo, codigo):
             supportsAllDrives=True
         ).execute()
         
-        file_id = file.get('id')
-        
-        # 2. Transfere a propriedade para VOCÊ (Correção do Erro de Cota)
-        # Isso evita que a conta de serviço encha
-        if SEU_EMAIL_DONO_DRIVE and "@" in SEU_EMAIL_DONO_DRIVE:
-            try:
-                drive_service.permissions().create(
-                    fileId=file_id,
-                    body={'type': 'user', 'role': 'owner', 'emailAddress': SEU_EMAIL_DONO_DRIVE},
-                    transferOwnership=True,
-                    supportsAllDrives=True
-                ).execute()
-            except Exception as e_perm:
-                # Se falhar a transferência, avisamos, mas o upload foi feito
-                print(f"Aviso: Não foi possível transferir propriedade: {e_perm}")
-
-        return f"https://drive.google.com/uc?id={file_id}"
+        return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception as e:
         st.error(f"Erro no Upload: {e}")
         return None
 
-# --- TELA PRINCIPAL ---
+# --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
+    # Busca dados
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
     item_rows = df[df['CÓDIGO'] == codigo_busca]
@@ -79,7 +72,6 @@ if codigo_busca:
     if not item_rows.empty:
         item_atual = item_rows.tail(1)
         
-        # --- EXIBIÇÃO DO ITEM ---
         col1, col2 = st.columns(2)
         with col1:
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
@@ -88,25 +80,28 @@ if codigo_busca:
             
         with col2:
             link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
+            
             if link_foto:
                 st.image(link_foto, use_container_width=True)
             else:
-                st.info("Item sem foto no catálogo.")
-                nova_foto = st.camera_input("Cadastrar Foto")
+                st.info("📸 Item sem foto.")
+                nova_foto = st.camera_input("Tirar Foto Agora")
+                
                 if nova_foto:
-                    url = upload_foto(nova_foto, codigo_busca)
+                    with st.spinner("Salvando foto no Drive..."):
+                        url = upload_foto(nova_foto, codigo_busca)
+                        
                     if url:
+                        # Salva o link na planilha (Coluna 11 = K)
                         cell = sheet.find(codigo_busca)
                         sheet.update_cell(cell.row, 11, url) 
                         st.success("Foto salva com sucesso!")
                         st.rerun()
-                    else:
-                        st.error("Erro ao salvar foto. Se o erro for 'Storage Quota', sua conta de serviço está cheia.")
 
         st.divider()
 
         # --- REGISTRO DE MOVIMENTAÇÃO ---
-        with st.expander("📝 REGISTRAR NOVA MOVIMENTAÇÃO"):
+        with st.expander("📝 REGISTRAR MOVIMENTAÇÃO"):
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
             qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
             doc = st.text_input("REQUISIÇÃO/NF").upper()
@@ -126,34 +121,46 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
+                    # MONTAGEM DA LINHA
                     nova_linha = [
-                        dt_planilha, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
-                        qtd, tipo, round(novo_saldo, 2),
-                        doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0],
+                        dt_planilha, 
+                        codigo_busca, 
+                        item_atual['DESCRIÇÃO'].values[0],
+                        qtd, 
+                        tipo, 
+                        str(round(novo_saldo, 2)).replace('.', ','),
+                        doc, 
+                        resp, 
+                        item_atual['ARMAZÉM'].values[0], 
+                        item_atual['LOCALIZAÇÃO'].values[0],
                         link_foto or ""
                     ]
-                    sheet.append_row(nova_linha)
-                    st.success("Movimentação registrada!")
+                    
+                    sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
+                    st.success("✅ Movimentação registrada!")
                     st.rerun()
                 else:
-                    st.warning("Por favor, preencha o nome do Responsável.")
+                    st.warning("⚠️ Preencha o Responsável.")
 
-        # --- HISTÓRICO COLORIDO ---
+        # --- HISTÓRICO ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
+        # Filtra apenas colunas que realmente existem para evitar erro
+        cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
+        cols_finais = [c for c in cols_desejadas if c in hist.columns]
         
-        # Colunas Reorganizadas
-        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
-        hist_final = hist[colunas_v]
+        if 'DATA' in hist.columns:
+             hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
+             
+        hist_final = hist[cols_finais]
 
         def style_rows(row):
-            if row['TIPO MOV.'] == 'SAÍDA':
-                return ['color: #d32f2f; font-weight: bold'] * len(row)
-            elif row['TIPO MOV.'] == 'ENTRADA':
-                return ['color: #2e7d32; font-weight: bold'] * len(row)
+            if 'TIPO MOV.' in row:
+                if row['TIPO MOV.'] == 'SAÍDA':
+                    return ['color: #d32f2f; font-weight: bold'] * len(row)
+                elif row['TIPO MOV.'] == 'ENTRADA':
+                    return ['color: #2e7d32; font-weight: bold'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
@@ -162,4 +169,4 @@ if codigo_busca:
             use_container_width=True
         )
     else:
-        st.error("Código não encontrado na planilha LOGIX.")
+        st.error("Código não encontrado.")
