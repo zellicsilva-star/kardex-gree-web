@@ -50,8 +50,11 @@ if codigo_busca:
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.markdown(f"### {item_atual['DESCRIÇÃO'].values[0]}")
-                st.write(f"**📍 Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
+                # REORGANIZAÇÃO: Código -> Descrição -> Localização
+                st.markdown(f"## **Código:** {codigo_busca}")
+                st.markdown(f"### **Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
+                st.markdown(f"#### **📍 Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
+                
                 st.write(f"**🏢 Armazém:** {item_atual['ARMAZÉM'].values[0]}")
                 st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
 
@@ -112,7 +115,7 @@ if codigo_busca:
                                 responsavel, 
                                 item_atual['ARMAZÉM'].values[0], 
                                 item_atual['LOCALIZAÇÃO'].values[0],
-                                foto_url # Mantém a foto que já existia
+                                foto_url 
                             ]
 
                             # Envia para a planilha
@@ -124,8 +127,13 @@ if codigo_busca:
 
             # --- HISTÓRICO ---
             st.subheader("📜 Últimas 5 Movimentações")
-            hist = item_rows.tail(5).iloc[::-1] # Inverte para mostrar a mais recente primeiro
-            st.table(hist[['DATA', 'TIPO MOV.', 'VALOR MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']])
+            hist = item_rows.tail(5).iloc[::-1].copy() # Inverte e cria cópia para manipulação
+            
+            # Limpa o horário das datas para exibição na tabela
+            hist['DATA'] = hist['DATA'].apply(lambda x: x.split(' ')[0])
+            
+            # Exibe a tabela com as colunas solicitadas (incluindo REQUISIÇÃO)
+            st.table(hist[['DATA', 'TIPO MOV.', 'VALOR MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']])
 
         else:
             st.error("❌ Código não encontrado na base de dados.")
