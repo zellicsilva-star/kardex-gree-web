@@ -40,7 +40,6 @@ def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        # Adicionado supportsAllDrives=True para mitigar erros de cota/permissão mostrados nas imagens
         file = drive_service.files().create(body=file_metadata, media_body=media, fields='id', supportsAllDrives=True).execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except:
@@ -54,13 +53,14 @@ if codigo_busca:
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
     
-    # CORREÇÃO CRUCIAL: Remove espaços extras dos nomes das colunas vindos da planilha
+    # Limpeza de cabeçalhos
     df.columns = df.columns.str.strip()
     
-    # Filtra garantindo que não existam espaços no código comparado
+    # Filtra o item
     item_rows = df[df['CÓDIGO'].str.strip() == codigo_busca]
     
     if not item_rows.empty:
+        # Pega a linha mais recente
         item_atual = item_rows.tail(1)
         
         col1, col2 = st.columns(2)
@@ -68,8 +68,15 @@ if codigo_busca:
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             st.write(f"**Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
             
-            # Busca Localização: tenta pelo nome, se falhar usa a posição da Coluna J (índice 9)
-            loc_val = item_atual['LOCALIZAÇÃO'].values[0] if 'LOCALIZAÇÃO' in item_atual.columns else item_atual.iloc[0, 9]
+            # --- CORREÇÃO DA LOCALIZAÇÃO (COLUNA J) ---
+            # Tenta pelo nome exato, se não encontrar ou estiver vazio, pega pelo índice da Coluna J (9)
+            if 'LOCALIZAÇÃO' in item_atual.columns and item_atual['LOCALIZAÇÃO'].values[0].strip() != "":
+                loc_val = item_atual['LOCALIZAÇÃO'].values[0]
+            else:
+                # Localiza a linha original nos dados brutos para pegar a coluna J com precisão
+                linha_index = item_atual.index[0]
+                loc_val = dados[linha_index + 1][9] if len(dados[linha_index + 1]) > 9 else "N/A"
+            
             st.write(f"**Localização:** {loc_val}")
         
         with col2:
@@ -82,7 +89,6 @@ if codigo_busca:
                     url = upload_foto(nova_foto, codigo_busca)
                     if url:
                         cell = sheet.find(codigo_busca)
-                        # Atualiza coluna 11 (K) que geralmente é onde fica a FOTO
                         sheet.update_cell(cell.row, 11, url) 
                         st.success("Foto salva!")
                         st.rerun()
@@ -95,14 +101,13 @@ if codigo_busca:
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento") and resp:
-                # Converte saldo tratando vírgulas e pontos
                 val_saldo = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
                 saldo_ant = float(val_saldo) if val_saldo else 0.0
                 
                 novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                 data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                 
-                # Segue a ordem da planilha: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
+                # Registra mantendo a Localização na Coluna J
                 sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", loc_val, link_foto or ""])
                 st.success("Lançado!")
                 st.rerun()
