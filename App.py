@@ -40,7 +40,7 @@ def upload_foto(arquivo, codigo):
         file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception as e:
-        st.error("⚠️ ERRO DE PERMISSÃO: A API do Google Drive pode estar desativada no Cloud Console ou a pasta não deu acesso de EDITOR ao e-mail do JSON.")
+        st.error("⚠️ ERRO: Ative a API do Google Drive no Cloud Console e verifique a permissão de EDITOR na pasta.")
         return None
 
 # --- INTERFACE ---
@@ -94,10 +94,12 @@ if codigo_busca:
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
                     else: novo_saldo = qtd
                     
-                    data_hora = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
+                    # Grava data e hora completa na planilha para controle
+                    agora = datetime.datetime.now(FUSO_HORARIO)
+                    data_hora_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
                     nova_linha = [
-                        data_hora, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
+                        data_hora_planilha, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
                         qtd, tipo, round(novo_saldo, 2),
                         doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0],
                         link_foto if link_foto else ""
@@ -106,11 +108,16 @@ if codigo_busca:
                     st.success("Lançado com sucesso!")
                     st.rerun()
 
-        # --- HISTÓRICO ATUALIZADO ---
-        st.subheader("📜 Histórico Recente (Manaus)")
+        # --- HISTÓRICO REESTRUTURADO ---
+        st.subheader("📜 Histórico Recente")
         hist_exibir = item_rows.tail(5).iloc[::-1].copy()
-        # Colunas solicitadas: Data, Tipo, Quantidade (Valor Mov), Responsável e Saldo Atual
-        colunas_v = ['DATA', 'TIPO MOV.', 'VALOR MOV.', 'RESPONSÁVEL', 'SALDO ATUAL']
+        
+        # 1. Limpa a data para exibir apenas dia/mês/ano no site
+        hist_exibir['DATA'] = hist_exibir['DATA'].apply(lambda x: x.split(' ')[0] if ' ' in str(x) else x)
+        
+        # 2. Nova ordem das colunas conforme solicitado
+        colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
+        
         st.dataframe(hist_exibir[colunas_v], hide_index=True, use_container_width=True)
         
     else:
