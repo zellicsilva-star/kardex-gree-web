@@ -40,7 +40,8 @@ def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        # Adicionado supportsAllDrives=True para mitigar erros de cota/permissão mostrados nas imagens
+        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id', supportsAllDrives=True).execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except:
         return None
@@ -52,7 +53,12 @@ codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip(
 if codigo_busca:
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
-    item_rows = df[df['CÓDIGO'] == codigo_busca]
+    
+    # CORREÇÃO CRUCIAL: Remove espaços extras dos nomes das colunas vindos da planilha
+    df.columns = df.columns.str.strip()
+    
+    # Filtra garantindo que não existam espaços no código comparado
+    item_rows = df[df['CÓDIGO'].str.strip() == codigo_busca]
     
     if not item_rows.empty:
         item_atual = item_rows.tail(1)
@@ -61,7 +67,10 @@ if codigo_busca:
         with col1:
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             st.write(f"**Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
-            st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
+            
+            # Busca Localização: tenta pelo nome, se falhar usa a posição da Coluna J (índice 9)
+            loc_val = item_atual['LOCALIZAÇÃO'].values[0] if 'LOCALIZAÇÃO' in item_atual.columns else item_atual.iloc[0, 9]
+            st.write(f"**Localização:** {loc_val}")
         
         with col2:
             link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
@@ -73,6 +82,7 @@ if codigo_busca:
                     url = upload_foto(nova_foto, codigo_busca)
                     if url:
                         cell = sheet.find(codigo_busca)
+                        # Atualiza coluna 11 (K) que geralmente é onde fica a FOTO
                         sheet.update_cell(cell.row, 11, url) 
                         st.success("Foto salva!")
                         st.rerun()
@@ -85,20 +95,23 @@ if codigo_busca:
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento") and resp:
-                saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                # Converte saldo tratando vírgulas e pontos
+                val_saldo = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
+                saldo_ant = float(val_saldo) if val_saldo else 0.0
+                
                 novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                 data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                 
-                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", "", link_foto or ""])
+                # Segue a ordem da planilha: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
+                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", loc_val, link_foto or ""])
                 st.success("Lançado!")
                 st.rerun()
 
-        # --- HISTÓRICO COM CORES E ORDEM SOLICITADA ---
+        # --- HISTÓRICO ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # Ordem solicitada: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
         
         def colorir(row):
