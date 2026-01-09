@@ -2,21 +2,19 @@ import streamlit as st
 import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 import datetime
 import pytz
+from PIL import Image
 import io
+import base64
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-# ATUALIZADO: ID DA PASTA NOVA (FOTOS_KARDEX_NOVA) CONFIRMADO NO SEU PRINT
-ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" 
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
-st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
+st.set_page_config(page_title="GREE - Kardex Web (Modo Célula)", page_icon="📦", layout="wide")
 
-# --- CONEXÃO ---
+# --- CONEXÃO APENAS COM PLANILHA (SEM DRIVE) ---
 @st.cache_resource
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -30,37 +28,41 @@ def conectar():
     
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
-    drive = build('drive', 'v3', credentials=creds)
-    
-    return planilha, drive
+    return planilha
 
 try:
-    sheet, drive_service = conectar()
+    sheet = conectar()
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO DE UPLOAD ---
-def upload_foto(arquivo, codigo):
+# --- FUNÇÃO MÁGICA: CONVERTE FOTO EM TEXTO PARA CABER NA CÉLULA ---
+def converter_imagem_para_texto(arquivo_foto):
     try:
-        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
-        media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
+        # 1. Abre a imagem
+        image = Image.open(arquivo_foto)
         
-        # Faz o upload usando o espaço que você acabou de contratar
-        file = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
+        # 2. Reduz o tamanho (Obrigatório para caber na célula)
+        # Transforma em thumbnail de max 400 pixels
+        image.thumbnail((400, 400))
         
-        return f"https://drive.google.com/uc?id={file.get('id')}"
+        # 3. Converte para JPEG (Comprime)
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=70)
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        # 4. Transforma em texto Base64
+        b64_string = base64.b64encode(img_byte_arr).decode('utf-8')
+        
+        return f"data:image/jpeg;base64,{b64_string}"
     except Exception as e:
-        st.error(f"Erro no Upload: {e}")
+        st.error(f"Erro ao processar imagem: {e}")
         return None
 
 # --- INTERFACE ---
-st.title("📦 GREE - Kardex Digital Web")
+st.title("📦 GREE - Kardex (Modo Célula)")
+st.info("ℹ️ Modo Plano B: As fotos são salvas direto na planilha (sem link do Drive).")
+
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
@@ -79,24 +81,27 @@ if codigo_busca:
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
         with col2:
-            link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
+            # Verifica se tem foto (Link ou Base64)
+            dado_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             
-            if link_foto:
-                st.image(link_foto, use_container_width=True)
+            if dado_foto and len(str(dado_foto)) > 10:
+                # Mostra a foto (O Streamlit é inteligente e entende o código Base64)
+                st.image(dado_foto, use_container_width=True)
             else:
-                st.info("📸 Item sem foto.")
+                st.warning("📸 Item sem foto.")
                 nova_foto = st.camera_input("Tirar Foto Agora")
                 
                 if nova_foto:
-                    with st.spinner("Salvando foto no Drive..."):
-                        url = upload_foto(nova_foto, codigo_busca)
+                    with st.spinner("Processando e salvando na planilha..."):
+                        # Usa a nova função de conversão
+                        texto_da_imagem = converter_imagem_para_texto(nova_foto)
                         
-                    if url:
-                        # Salva o link na planilha (Coluna 11 = K)
-                        cell = sheet.find(codigo_busca)
-                        sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva com sucesso!")
-                        st.rerun()
+                        if texto_da_imagem:
+                            # Salva o TEXTO GIGANTE na coluna K (11)
+                            cell = sheet.find(codigo_busca)
+                            sheet.update_cell(cell.row, 11, texto_da_imagem) 
+                            st.success("Foto salva na planilha com sucesso!")
+                            st.rerun()
 
         st.divider()
 
@@ -121,7 +126,9 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # MONTAGEM DA LINHA
+                    # Se já tem foto (base64 ou link), mantém ela no histórico
+                    foto_atual = dado_foto or ""
+                    
                     nova_linha = [
                         dt_planilha, 
                         codigo_busca, 
@@ -133,7 +140,7 @@ if codigo_busca:
                         resp, 
                         item_atual['ARMAZÉM'].values[0], 
                         item_atual['LOCALIZAÇÃO'].values[0],
-                        link_foto or ""
+                        foto_atual # Salva a foto na linha nova também
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
@@ -146,7 +153,7 @@ if codigo_busca:
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        # Filtra apenas colunas que realmente existem para evitar erro
+        # Filtra colunas
         cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
         cols_finais = [c for c in cols_desejadas if c in hist.columns]
         
