@@ -12,19 +12,16 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-# IMPORTANTE: Use o seu e-mail do Google Drive aqui
-SEU_EMAIL_DONO_DRIVE = "seu-email@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
+# --- CONEXÃO ---
 @st.cache_resource
 def conectar_banco():
-    # Escopos ampliados para permitir transferência de propriedade
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/drive.file"
-    ]
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    if "gcp_service_account" not in st.secrets:
+        st.error("Configure os Secrets no painel do Streamlit!")
+        st.stop()
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
@@ -38,31 +35,15 @@ except Exception as e:
     st.error(f"Erro de conexão: {e}")
     st.stop()
 
+# --- FUNÇÃO FOTO ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        
-        # Upload simples
-        file = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id'
-        ).execute()
-        
-        file_id = file.get('id')
-
-        # Transferência de propriedade para evitar erro de cota (403 storageQuotaExceeded)
-        drive_service.permissions().create(
-            fileId=file_id,
-            body={'type': 'user', 'role': 'owner', 'emailAddress': SEU_EMAIL_DONO_DRIVE},
-            transferOwnership=True
-        ).execute()
-        
-        return f"https://drive.google.com/uc?id={file_id}"
-    except Exception as e:
-        # Se falhar a transferência, tentamos retornar o link mesmo assim
-        return f"https://drive.google.com/uc?id={file_id}" if 'file_id' in locals() else None
+        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        return f"https://drive.google.com/uc?id={file.get('id')}"
+    except:
+        return None
 
 # --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
@@ -104,17 +85,21 @@ if codigo_busca:
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento") and resp:
+                saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                 data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
-                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, "", "", resp, "", "", link_foto or ""])
+                
+                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", "", link_foto or ""])
                 st.success("Lançado!")
                 st.rerun()
 
+        # --- HISTÓRICO COM CORES E ORDEM SOLICITADA ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # ORDEM SOLICITADA: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
-        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
+        # Ordem solicitada: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
+        colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
         
         def colorir(row):
             cor = 'color: #d32f2f' if row['TIPO MOV.'] == 'SAÍDA' else 'color: #2e7d32' if row['TIPO MOV.'] == 'ENTRADA' else ''
