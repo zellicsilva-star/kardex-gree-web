@@ -2,19 +2,20 @@ import streamlit as st
 import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 import datetime
 import pytz
-from PIL import Image
 import io
-import base64
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" # Sua pasta nova
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
-st.set_page_config(page_title="GREE - Kardex Web (Modo Célula)", page_icon="📦", layout="wide")
+st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
-# --- CONEXÃO APENAS COM PLANILHA (SEM DRIVE) ---
+# --- CONEXÃO ---
 @st.cache_resource
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -28,41 +29,37 @@ def conectar():
     
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
-    return planilha
+    drive = build('drive', 'v3', credentials=creds)
+    
+    return planilha, drive
 
 try:
-    sheet = conectar()
+    sheet, drive_service = conectar()
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO MÁGICA: CONVERTE FOTO EM TEXTO PARA CABER NA CÉLULA ---
-def converter_imagem_para_texto(arquivo_foto):
+# --- FUNÇÃO DE UPLOAD (DRIVE) ---
+def upload_foto(arquivo, codigo):
     try:
-        # 1. Abre a imagem
-        image = Image.open(arquivo_foto)
+        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
+        media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # 2. Reduz o tamanho (Obrigatório para caber na célula)
-        # Transforma em thumbnail de max 400 pixels
-        image.thumbnail((400, 400))
+        # Tenta salvar no Drive (requer faturamento ativo)
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
         
-        # 3. Converte para JPEG (Comprime)
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=70)
-        img_byte_arr = img_byte_arr.getvalue()
-        
-        # 4. Transforma em texto Base64
-        b64_string = base64.b64encode(img_byte_arr).decode('utf-8')
-        
-        return f"data:image/jpeg;base64,{b64_string}"
+        return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception as e:
-        st.error(f"Erro ao processar imagem: {e}")
+        st.error(f"Erro no Upload (Drive): {e}")
         return None
 
 # --- INTERFACE ---
-st.title("📦 GREE - Kardex (Modo Célula)")
-st.info("ℹ️ Modo Plano B: As fotos são salvas direto na planilha (sem link do Drive).")
-
+st.title("📦 GREE - Kardex Digital Web")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
@@ -81,27 +78,24 @@ if codigo_busca:
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
         with col2:
-            # Verifica se tem foto (Link ou Base64)
+            # Tenta pegar a foto (compatível com link ou base64 antigo)
             dado_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             
-            if dado_foto and len(str(dado_foto)) > 10:
-                # Mostra a foto (O Streamlit é inteligente e entende o código Base64)
+            if dado_foto and len(str(dado_foto)) > 5:
                 st.image(dado_foto, use_container_width=True)
             else:
-                st.warning("📸 Item sem foto.")
+                st.info("📸 Item sem foto.")
                 nova_foto = st.camera_input("Tirar Foto Agora")
                 
                 if nova_foto:
-                    with st.spinner("Processando e salvando na planilha..."):
-                        # Usa a nova função de conversão
-                        texto_da_imagem = converter_imagem_para_texto(nova_foto)
+                    with st.spinner("Salvando foto no Drive..."):
+                        url = upload_foto(nova_foto, codigo_busca)
                         
-                        if texto_da_imagem:
-                            # Salva o TEXTO GIGANTE na coluna K (11)
-                            cell = sheet.find(codigo_busca)
-                            sheet.update_cell(cell.row, 11, texto_da_imagem) 
-                            st.success("Foto salva na planilha com sucesso!")
-                            st.rerun()
+                    if url:
+                        cell = sheet.find(codigo_busca)
+                        sheet.update_cell(cell.row, 11, url) 
+                        st.success("Foto salva com sucesso!")
+                        st.rerun()
 
         st.divider()
 
@@ -126,9 +120,6 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # Se já tem foto (base64 ou link), mantém ela no histórico
-                    foto_atual = dado_foto or ""
-                    
                     nova_linha = [
                         dt_planilha, 
                         codigo_busca, 
@@ -140,7 +131,7 @@ if codigo_busca:
                         resp, 
                         item_atual['ARMAZÉM'].values[0], 
                         item_atual['LOCALIZAÇÃO'].values[0],
-                        foto_atual # Salva a foto na linha nova também
+                        dado_foto or ""
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
@@ -153,7 +144,6 @@ if codigo_busca:
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        # Filtra colunas
         cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
         cols_finais = [c for c in cols_desejadas if c in hist.columns]
         
