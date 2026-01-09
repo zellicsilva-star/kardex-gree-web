@@ -1,62 +1,165 @@
 import streamlit as st
-from google.oauth2 import service_account
+import gspread
+import pandas as pd
+from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+import datetime
+import pytz
 import io
 
-st.title("🕵️‍♂️ Teste de Diagnóstico do Drive")
+# --- CONFIGURAÇÕES DE ID ---
+ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
+FUSO_HORARIO = pytz.timezone('America/Manaus')
 
-# 1. Mostra quem o Streamlit ACHA que é o robô
-try:
+# --- IMPORTANTE: COLOQUE SEU E-MAIL AQUI ---
+# O robô vai passar a foto para este e-mail para não ocupar espaço dele
+SEU_EMAIL_DONO_DRIVE = "zellic.silva@gmail.com" 
+
+st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
+
+# --- CONEXÃO COM GOOGLE SERVICES ---
+@st.cache_resource
+def conectar():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = st.secrets["gcp_service_account"]
-    email_robo = creds_dict.get("client_email", "Não encontrado")
-    st.info(f"🤖 O Robô configurado nos Secrets é: **{email_robo}**")
-except Exception as e:
-    st.error(f"Erro ao ler Secrets: {e}")
-    st.stop()
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    planilha = client.open_by_key(ID_PLANILHA).sheet1
+    drive = build('drive', 'v3', credentials=creds)
+    return planilha, drive
 
-# 2. Configura a Pasta (Use o ID da pasta NOVA que você criou)
-ID_PASTA = st.text_input("Cole o ID da Pasta Nova aqui:", "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC")
+sheet, drive_service = conectar()
 
-if st.button("Tentar Criar Arquivo de Teste"):
+# --- FUNÇÃO DE UPLOAD CORRIGIDA ---
+def upload_foto(arquivo, codigo):
     try:
-        # Conexão
-        creds = service_account.Credentials.from_service_account_info(
-            creds_dict,
-            scopes=["https://www.googleapis.com/auth/drive"]
-        )
-        drive_service = build('drive', 'v3', credentials=creds)
-
-        # Tenta criar um arquivo de texto simples
-        file_metadata = {
-            'name': 'teste_de_conexao.txt',
-            'parents': [ID_PASTA]
-        }
-        media = MediaIoBaseUpload(io.BytesIO(b"Ola, eu sou o robo e estou funcionando!"), mimetype='text/plain')
-
+        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
+        media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
+        
+        # 1. Cria o arquivo (Upload inicial)
         file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
+            body=file_metadata, 
+            media_body=media, 
             fields='id',
             supportsAllDrives=True
         ).execute()
+        
+        file_id = file.get('id')
+        
+        # 2. Transfere a propriedade para VOCÊ (Correção do Erro de Cota)
+        # Isso evita que a conta de serviço encha
+        if SEU_EMAIL_DONO_DRIVE and "@" in SEU_EMAIL_DONO_DRIVE:
+            try:
+                drive_service.permissions().create(
+                    fileId=file_id,
+                    body={'type': 'user', 'role': 'owner', 'emailAddress': SEU_EMAIL_DONO_DRIVE},
+                    transferOwnership=True,
+                    supportsAllDrives=True
+                ).execute()
+            except Exception as e_perm:
+                # Se falhar a transferência, avisamos, mas o upload foi feito
+                print(f"Aviso: Não foi possível transferir propriedade: {e_perm}")
 
-        st.success(f"✅ SUCESSO! O robô conseguiu criar o arquivo. ID: {file.get('id')}")
-        st.balloons()
-
+        return f"https://drive.google.com/uc?id={file_id}"
     except Exception as e:
-        st.error(f"❌ FALHA: {e}")
-        st.write("---")
-        st.warning("O que isso significa:")
-        error_msg = str(e)
-        if "Insufficient permissions" in error_msg:
-            st.markdown(f"""
-            O robô **{email_robo}** não tem permissão de **EDITOR** na pasta **{ID_PASTA}**.
-            1. Copie o e-mail azul acima.
-            2. Vá na pasta {ID_PASTA} no Drive.
-            3. Adicione ele como EDITOR.
-            """)
-        elif "quota" in error_msg.lower():
-             st.markdown("O robô está sem espaço (Quota Exceeded).")
-        else:
-            st.markdown("Erro desconhecido. Verifique se a API do Drive está ativada no console.")
+        st.error(f"Erro no Upload: {e}")
+        return None
+
+# --- TELA PRINCIPAL ---
+st.title("📦 GREE - Kardex Digital Web")
+codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
+
+if codigo_busca:
+    dados = sheet.get_all_values()
+    df = pd.DataFrame(dados[1:], columns=dados[0])
+    item_rows = df[df['CÓDIGO'] == codigo_busca]
+    
+    if not item_rows.empty:
+        item_atual = item_rows.tail(1)
+        
+        # --- EXIBIÇÃO DO ITEM ---
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
+            st.write(f"**Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
+            st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
+            
+        with col2:
+            link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
+            if link_foto:
+                st.image(link_foto, use_container_width=True)
+            else:
+                st.info("Item sem foto no catálogo.")
+                nova_foto = st.camera_input("Cadastrar Foto")
+                if nova_foto:
+                    url = upload_foto(nova_foto, codigo_busca)
+                    if url:
+                        cell = sheet.find(codigo_busca)
+                        sheet.update_cell(cell.row, 11, url) 
+                        st.success("Foto salva com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao salvar foto. Se o erro for 'Storage Quota', sua conta de serviço está cheia.")
+
+        st.divider()
+
+        # --- REGISTRO DE MOVIMENTAÇÃO ---
+        with st.expander("📝 REGISTRAR NOVA MOVIMENTAÇÃO"):
+            tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
+            qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
+            doc = st.text_input("REQUISIÇÃO/NF").upper()
+            resp = st.text_input("RESPONSÁVEL").upper()
+            
+            if st.button("Confirmar Lançamento"):
+                if resp:
+                    try:
+                        saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                    except:
+                        saldo_ant = 0.0
+                        
+                    if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
+                    elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
+                    else: novo_saldo = qtd 
+                    
+                    agora = datetime.datetime.now(FUSO_HORARIO)
+                    dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
+                    
+                    # Ordem: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
+                    nova_linha = [
+                        dt_planilha, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
+                        qtd, tipo, round(novo_saldo, 2),
+                        doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0],
+                        link_foto or ""
+                    ]
+                    sheet.append_row(nova_linha)
+                    st.success("Movimentação registrada!")
+                    st.rerun()
+                else:
+                    st.warning("Por favor, preencha o nome do Responsável.")
+
+        # --- HISTÓRICO COLORIDO ---
+        st.subheader("📜 Histórico Recente")
+        hist = item_rows.tail(5).iloc[::-1].copy()
+        
+        hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
+        
+        # Colunas Reorganizadas
+        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
+        hist_final = hist[colunas_v]
+
+        def style_rows(row):
+            if row['TIPO MOV.'] == 'SAÍDA':
+                return ['color: #d32f2f; font-weight: bold'] * len(row)
+            elif row['TIPO MOV.'] == 'ENTRADA':
+                return ['color: #2e7d32; font-weight: bold'] * len(row)
+            return [''] * len(row)
+
+        st.dataframe(
+            hist_final.style.apply(style_rows, axis=1),
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.error("Código não encontrado na planilha LOGIX.")
