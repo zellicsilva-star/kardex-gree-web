@@ -13,6 +13,10 @@ ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
+# --- IMPORTANTE: COLOQUE SEU E-MAIL AQUI ---
+# O robô vai passar a foto para este e-mail para não ocupar espaço dele
+SEU_EMAIL_DONO_DRIVE = "seu.email.real@gmail.com" 
+
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
 # --- CONEXÃO COM GOOGLE SERVICES ---
@@ -28,13 +32,13 @@ def conectar():
 
 sheet, drive_service = conectar()
 
-# --- FUNÇÃO DE UPLOAD (MODO DIAGNÓSTICO) ---
+# --- FUNÇÃO DE UPLOAD CORRIGIDA ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # Tenta criar o arquivo
+        # 1. Cria o arquivo (Upload inicial)
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -42,10 +46,25 @@ def upload_foto(arquivo, codigo):
             supportsAllDrives=True
         ).execute()
         
-        return f"https://drive.google.com/uc?id={file.get('id')}"
+        file_id = file.get('id')
+        
+        # 2. Transfere a propriedade para VOCÊ (Correção do Erro de Cota)
+        # Isso evita que a conta de serviço encha
+        if SEU_EMAIL_DONO_DRIVE and "@" in SEU_EMAIL_DONO_DRIVE:
+            try:
+                drive_service.permissions().create(
+                    fileId=file_id,
+                    body={'type': 'user', 'role': 'owner', 'emailAddress': SEU_EMAIL_DONO_DRIVE},
+                    transferOwnership=True,
+                    supportsAllDrives=True
+                ).execute()
+            except Exception as e_perm:
+                # Se falhar a transferência, avisamos, mas o upload foi feito
+                print(f"Aviso: Não foi possível transferir propriedade: {e_perm}")
+
+        return f"https://drive.google.com/uc?id={file_id}"
     except Exception as e:
-        # AQUI ESTÁ A MUDANÇA: Mostra o erro real na tela
-        st.error(f"❌ ERRO REAL DO GOOGLE: {e}")
+        st.error(f"Erro no Upload: {e}")
         return None
 
 # --- TELA PRINCIPAL ---
@@ -82,7 +101,7 @@ if codigo_busca:
                         st.success("Foto salva com sucesso!")
                         st.rerun()
                     else:
-                        st.warning("Não foi possível salvar a foto. Veja a mensagem de erro acima (ERRO REAL DO GOOGLE).")
+                        st.error("Erro ao salvar foto. Se o erro for 'Storage Quota', sua conta de serviço está cheia.")
 
         st.divider()
 
@@ -95,7 +114,6 @@ if codigo_busca:
             
             if st.button("Confirmar Lançamento"):
                 if resp:
-                    # Cálculo de Saldo
                     try:
                         saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
                     except:
@@ -103,12 +121,12 @@ if codigo_busca:
                         
                     if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
-                    else: novo_saldo = qtd # Inventário substitui o saldo
+                    else: novo_saldo = qtd 
                     
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem Planilha: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
+                    # Ordem: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
                     nova_linha = [
                         dt_planilha, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
                         qtd, tipo, round(novo_saldo, 2),
@@ -125,14 +143,12 @@ if codigo_busca:
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        # Formata data (remove horário)
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # COLUNA REQUISIÇÃO AO LADO ESQUERDO DE RESPONSÁVEL
+        # Colunas Reorganizadas
         colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
         hist_final = hist[colunas_v]
 
-        # Lógica de Cores
         def style_rows(row):
             if row['TIPO MOV.'] == 'SAÍDA':
                 return ['color: #d32f2f; font-weight: bold'] * len(row)
