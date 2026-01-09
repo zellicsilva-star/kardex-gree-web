@@ -12,7 +12,7 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-# IMPORTANTE: Coloque seu e-mail pessoal aqui
+# IMPORTANTE: Use seu email pessoal aqui para as fotos funcionarem
 SEU_EMAIL_DONO_DRIVE = "seu-email@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
@@ -54,42 +54,34 @@ st.title("📦 GREE - Kardex Digital Web")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
-    dados = sheet.get_all_values()
-    if len(dados) > 1:
-        # Criamos o DataFrame e padronizamos cabeçalhos
-        df = pd.DataFrame(dados[1:], columns=dados[0])
-        original_cols = list(df.columns) # Guarda a ordem real das colunas (A, B, C...)
+    # Pegamos os valores brutos para não depender de nomes de colunas que podem mudar
+    dados_brutos = sheet.get_all_values()
+    
+    if len(dados_brutos) > 1:
+        # Criamos o DataFrame
+        df = pd.DataFrame(dados_brutos[1:], columns=dados_brutos[0])
         
-        df.columns = df.columns.str.strip().str.upper()
-        df['CÓDIGO'] = df['CÓDIGO'].str.strip().str.upper()
+        # Filtramos pelo código (Coluna B - índice 1)
+        # Usamos .values para garantir que pegamos a linha bruta da planilha
+        item_rows = [linha for linha in dados_brutos if linha[1].strip().upper() == codigo_busca]
         
-        item_rows = df[df['CÓDIGO'] == codigo_busca]
-        
-        if not item_rows.empty:
-            # Pega a linha mais recente
-            linha_bruta = item_rows.tail(1).values[0] # Dados puros da linha
-            item_dict = item_rows.tail(1).to_dict('records')[0]
+        if item_rows:
+            # Pega a última linha encontrada (mais recente)
+            linha_atual = item_rows[-1]
             
-            # 1. SALDO (Coluna F - índice 5)
-            saldo = item_dict.get('SALDO ATUAL') or item_dict.get('SALDO') or "0"
-            
-            # 2. DESCRIÇÃO (Coluna C - índice 2)
-            desc = item_dict.get('DESCRIÇÃO') or item_dict.get('DESCRICAO') or "Sem descrição"
-            
-            # 3. LOCALIZAÇÃO (Coluna J - índice 9)
-            # Tentamos pelo nome, se falhar, pegamos direto pela posição 10 (índice 9)
-            local = item_dict.get('LOCALIZAÇÃO') or item_dict.get('LOCALIZACAO')
-            if (not local or local == "Não definida") and len(linha_bruta) >= 10:
-                local = linha_bruta[9] # Posição exata da Coluna J
-
-            foto_link = item_dict.get('FOTO') or ""
+            # MAPEAMENTO POR ÍNDICE (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9, K=10)
+            # Se a ordem da sua planilha for a padrão:
+            desc = linha_atual[2] if len(linha_atual) > 2 else "Sem descrição"
+            saldo = linha_atual[5] if len(linha_atual) > 5 else "0"
+            local = linha_atual[9] if len(linha_atual) > 9 else "Não informada"
+            foto_link = linha_atual[10] if len(linha_atual) > 10 else ""
 
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("SALDO ATUAL", saldo)
                 st.write(f"**Descrição:** {desc}")
-                # Localização agora EMBAIXO da descrição
-                st.info(f"📍 **Localização:** {local if local else 'Não informada'}")
+                # LOCALIZAÇÃO ABAIXO DA DESCRIÇÃO
+                st.warning(f"📍 **Localização:** {local}")
             
             with col2:
                 if foto_link and "http" in str(foto_link):
@@ -123,7 +115,7 @@ if codigo_busca:
                     
                     data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                     
-                    # Salva respeitando a estrutura de 11 colunas
+                    # Salva respeitando a estrutura: Data(0), Cod(1), Desc(2), Qtd(3), Tipo(4), Saldo(5), Req(6), Resp(7), Arm(8), Local(9), Foto(10)
                     nova_linha = [data_p, codigo_busca, desc, qtd, tipo, round(novo_saldo, 2), "", resp, "", local, foto_link]
                     
                     try:
@@ -133,15 +125,16 @@ if codigo_busca:
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
 
+            # Histórico (Baseado no DataFrame para facilitar visualização)
             st.subheader("📜 Histórico Recente")
-            hist = item_rows.tail(5).iloc[::-1].copy()
+            df.columns = [c.strip().upper() for c in df.columns]
+            hist_df = df[df['CÓDIGO'] == codigo_busca].tail(5).iloc[::-1]
+            
             colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
             colunas_existentes = [c for c in colunas_v if c in df.columns]
             
-            def colorir(row):
-                cor = 'color: #d32f2f' if row.get('TIPO MOV.') == 'SAÍDA' else 'color: #2e7d32' if row.get('TIPO MOV.') == 'ENTRADA' else ''
-                return [f'{cor}; font-weight: bold'] * len(row)
-
-            st.dataframe(hist[colunas_existentes].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
+            st.dataframe(hist_df[colunas_existentes], hide_index=True, use_container_width=True)
+        else:
+            st.error(f"Código '{codigo_busca}' não encontrado.")
     else:
-        st.error("Planilha sem dados.")
+        st.warning("Planilha vazia.")
