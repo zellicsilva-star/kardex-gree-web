@@ -33,13 +33,7 @@ def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        # CORREÇÃO: Adicionado supportsAllDrives=True para permitir upload via Service Account
-        file = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
+        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception:
         return None
@@ -78,7 +72,7 @@ if codigo_busca:
                         st.success("Foto salva com sucesso!")
                         st.rerun()
                     else:
-                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA e se a pasta está compartilhada com o e-mail do JSON.")
+                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA.")
 
         st.divider()
 
@@ -124,8 +118,8 @@ if codigo_busca:
         # Formata data (remove horário)
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # COLUNA REQUISIÇÃO AO LADO ESQUERDO DE RESPONSÁVEL
-        colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
+        # Colunas na ordem: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
+        colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
         hist_final = hist[colunas_v]
 
         # Lógica de Cores
