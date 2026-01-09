@@ -12,8 +12,8 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-# IMPORTANTE: Substitua pelo seu email pessoal
-SEU_EMAIL_DONO_DRIVE = "seu-email@gmail.com" 
+# IMPORTANTE: Coloque seu e-mail aqui para a posse das fotos
+SEU_EMAIL_DONO_DRIVE = "zellic.silva@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
@@ -54,42 +54,53 @@ st.title("📦 GREE - Kardex Digital Web")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
-    # Busca TODOS os dados para garantir que pegamos a última versão
     dados = sheet.get_all_values()
     if len(dados) > 1:
+        # Criamos o DataFrame e limpamos os nomes das colunas (removendo acentos e espaços)
         df = pd.DataFrame(dados[1:], columns=dados[0])
-        # Limpa espaços extras nos nomes das colunas e nos dados
         df.columns = df.columns.str.strip().str.upper()
-        df['CÓDIGO'] = df['CÓDIGO'].str.strip().str.upper()
         
+        # Localização costuma estar na Coluna J (índice 9 no Python, pois começa em 0)
+        # Vamos tentar pegar pelo nome, se não existir, pegamos pela posição J
+        colunas_lista = list(df.columns)
+        
+        df['CÓDIGO'] = df['CÓDIGO'].str.strip().str.upper()
         item_rows = df[df['CÓDIGO'] == codigo_busca]
         
         if not item_rows.empty:
-            # Pega a linha mais recente deste código
             item_atual = item_rows.tail(1).to_dict('records')[0]
             
-            # Tenta pegar os valores (usando nomes comuns caso o original mude)
+            # --- LÓGICA DA LOCALIZAÇÃO (COLUNA J) ---
             desc = item_atual.get('DESCRIÇÃO') or item_atual.get('DESCRICAO') or "Sem descrição"
             saldo = item_atual.get('SALDO ATUAL') or item_atual.get('SALDO') or "0"
-            local = item_atual.get('LOCALIZAÇÃO') or item_atual.get('LOCALIZACAO') or "Não definida"
+            
+            # Tentativa 1: Pelo nome "LOCALIZAÇÃO"
+            # Tentativa 2: Pelo nome "LOCALIZACAO"
+            # Tentativa 3: Pela posição física (Coluna J é a 10ª coluna, índice 9)
+            local = item_atual.get('LOCALIZAÇÃO') or item_atual.get('LOCALIZACAO')
+            if not local and len(colunas_lista) >= 10:
+                nome_coluna_j = colunas_lista[9] # Pega o nome da 10ª coluna
+                local = item_atual.get(nome_coluna_j)
+            
+            local = local if local else "Não informada"
             foto_link = item_atual.get('FOTO') or ""
 
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("SALDO ATUAL", saldo)
+                st.info(f"📍 **Localização:** {local}")
                 st.write(f"**Descrição:** {desc}")
-                st.write(f"**Localização:** {local}")
             
             with col2:
                 if foto_link and "http" in str(foto_link):
-                    st.image(foto_link, use_container_width=True)
+                    st.image(foto_link, caption=f"Foto de {codigo_busca}", use_container_width=True)
                 else:
                     nova_foto = st.camera_input("Cadastrar Foto")
                     if nova_foto:
                         url = upload_foto(nova_foto, codigo_busca)
                         if url:
-                            # Tenta achar a linha certa para atualizar a foto
                             cell = sheet.find(codigo_busca)
+                            # Atualiza a coluna 11 (K) com o link da foto
                             sheet.update_cell(cell.row, 11, url) 
                             st.success("Foto salva!")
                             st.rerun()
@@ -109,26 +120,23 @@ if codigo_busca:
                     
                     if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
-                    else: novo_saldo = qtd # Inventário substitui o saldo
+                    else: novo_saldo = qtd
                     
                     data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem exata das colunas: Data, Código, Descrição, Valor Mov, Tipo Mov, Saldo Atual, Req, Resp, Armazém, Local, Foto
+                    # Ordem das colunas para gravar nova linha
                     nova_linha = [data_p, codigo_busca, desc, qtd, tipo, round(novo_saldo, 2), "", resp, "", local, foto_link]
                     
                     try:
                         sheet.append_row(nova_linha)
-                        st.success("Lançado com sucesso na planilha!")
+                        st.success("Lançamento realizado!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
 
-            # --- HISTÓRICO ---
             st.subheader("📜 Histórico Recente")
             hist = item_rows.tail(5).iloc[::-1].copy()
-            # Garante que as colunas solicitadas existem para exibir
             colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
-            # Filtra apenas as que existem no DF para não dar erro
             colunas_existentes = [c for c in colunas_v if c in df.columns]
             
             def colorir(row):
@@ -137,6 +145,6 @@ if codigo_busca:
 
             st.dataframe(hist[colunas_existentes].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
         else:
-            st.error(f"Código '{codigo_busca}' não encontrado na planilha.")
+            st.error(f"Código '{codigo_busca}' não encontrado.")
     else:
-        st.warning("A planilha parece estar vazia (sem cabeçalhos).")
+        st.warning("Planilha vazia.")
