@@ -72,8 +72,8 @@ if codigo_busca:
         
         col1, col2 = st.columns(2)
         with col1:
-            # --- ALTERAÇÃO FEITA AQUI: Adicionado "DESCRIÇÃO: " antes do nome ---
-            st.markdown(f"### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
+            # --- ALTERAÇÃO AQUI: Mudado de ### para ##### para diminuir a fonte ---
+            st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             
