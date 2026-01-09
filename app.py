@@ -72,10 +72,9 @@ if codigo_busca:
         
         col1, col2 = st.columns(2)
         with col1:
-            # --- ALTERAÇÃO SOLICITADA: DESCRIÇÃO NO LUGAR DO SALDO ---
-            st.markdown(f"### {item_atual['DESCRIÇÃO'].values[0]}")
+            # --- ALTERAÇÃO FEITA AQUI: Adicionado "DESCRIÇÃO: " antes do nome ---
+            st.markdown(f"### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
-            # --- ALTERAÇÃO SOLICITADA: SALDO NO LUGAR DA DESCRIÇÃO ---
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
@@ -88,7 +87,6 @@ if codigo_busca:
                 st.image(dado_foto, use_container_width=True)
             else:
                 st.info("📸 Item sem foto.")
-                # --- ALTERAÇÃO SOLICITADA: REMOVIDA A OPÇÃO DE TIRAR FOTO AQUI ---
 
         st.divider()
 
