@@ -15,27 +15,47 @@ FUSO_HORARIO = pytz.timezone('America/Manaus')
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
-# --- CONEXÃO COM GOOGLE SERVICES ---
+# --- CONEXÃO COM GOOGLE SERVICES (ESCOPOS ATUALIZADOS) ---
 @st.cache_resource
 def conectar():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    # Adicionado escopos específicos de escrita e criação de arquivos
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/spreadsheets"
+    ]
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
+    
+    # Construção do serviço do Drive para Upload
     drive = build('drive', 'v3', credentials=creds)
+    
     return planilha, drive
 
 sheet, drive_service = conectar()
 
-# --- FUNÇÃO DE UPLOAD ---
+# --- FUNÇÃO DE UPLOAD MELHORADA ---
 def upload_foto(arquivo, codigo):
     try:
-        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
+        file_metadata = {
+            'name': f"foto_{codigo}.png",
+            'parents': [ID_PASTA_FOTOS]
+        }
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        # Link direto para visualização (UC = User Content)
         return f"https://drive.google.com/uc?id={file.get('id')}"
-    except Exception:
+    except Exception as e:
+        st.error(f"Erro técnico no Drive: {e}")
         return None
 
 # --- TELA PRINCIPAL ---
@@ -65,14 +85,19 @@ if codigo_busca:
                 st.info("Item sem foto no catálogo.")
                 nova_foto = st.camera_input("Cadastrar Foto")
                 if nova_foto:
-                    url = upload_foto(nova_foto, codigo_busca)
-                    if url:
-                        cell = sheet.find(codigo_busca)
-                        sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva com sucesso!")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA.")
+                    with st.spinner('Enviando foto para o Drive...'):
+                        url = upload_foto(nova_foto, codigo_busca)
+                        if url:
+                            # Atualiza a coluna 11 (FOTO) na linha correspondente
+                            try:
+                                cell = sheet.find(codigo_busca)
+                                sheet.update_cell(cell.row, 11, url) 
+                                st.success("Foto salva com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar planilha: {e}")
+                        else:
+                            st.error("Falha no upload. Verifique as permissões da pasta e se a API está ativa.")
 
         st.divider()
 
@@ -85,20 +110,20 @@ if codigo_busca:
             
             if st.button("Confirmar Lançamento"):
                 if resp:
-                    # Cálculo de Saldo
                     try:
-                        saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                        # Tratamento para ler números com vírgula ou ponto
+                        valor_limpo = str(item_atual['SALDO ATUAL'].values[0]).replace('.', '').replace(',', '.')
+                        saldo_ant = float(valor_limpo)
                     except:
                         saldo_ant = 0.0
                         
                     if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
-                    else: novo_saldo = qtd # Inventário substitui o saldo
+                    else: novo_saldo = qtd 
                     
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem Planilha: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
                     nova_linha = [
                         dt_planilha, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
                         qtd, tipo, round(novo_saldo, 2),
@@ -111,18 +136,17 @@ if codigo_busca:
                 else:
                     st.warning("Por favor, preencha o nome do Responsável.")
 
-        # --- HISTÓRICO COLORIDO ---
+        # --- HISTÓRICO REESTRUTURADO E COLORIDO ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        # Formata data (remove horário)
+        # Formata data (remove horário da exibição)
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # Colunas na ordem: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
+        # Colunas na ordem exata: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
         hist_final = hist[colunas_v]
 
-        # Lógica de Cores
         def style_rows(row):
             if row['TIPO MOV.'] == 'SAÍDA':
                 return ['color: #d32f2f; font-weight: bold'] * len(row)
