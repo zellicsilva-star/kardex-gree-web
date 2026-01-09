@@ -13,7 +13,7 @@ ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 # COLOQUE SEU E-MAIL ABAIXO (O dono da pasta no Drive)
-SEU_EMAIL_PESSOAL = "zellic.silva@gmail.com" 
+SEU_EMAIL_PESSOAL = "kardex@alien-isotope-483613-d3.iam.gserviceaccount.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
