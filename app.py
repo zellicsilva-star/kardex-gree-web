@@ -12,6 +12,8 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
+# COLOQUE SEU E-MAIL ABAIXO (O dono da pasta no Drive)
+SEU_EMAIL_PESSOAL = "zellic.silva@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
@@ -36,22 +38,37 @@ except Exception as e:
 
 def upload_foto(arquivo, codigo):
     try:
-        # metadata configurado para evitar erro de cota (storageQuotaExceeded)
+        # 1. Upload inicial do arquivo
         file_metadata = {
             'name': f"foto_{codigo}.png", 
             'parents': [ID_PASTA_FOTOS]
         }
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # O segredo está em garantir que o arquivo seja criado dentro da pasta compartilhada
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
             fields='id',
-            supportsAllDrives=True # Suporte para drives compartilhados/pastas com permissão
+            supportsAllDrives=True
         ).execute()
         
-        return f"https://drive.google.com/uc?id={file.get('id')}"
+        file_id = file.get('id')
+
+        # 2. Transferir a "propriedade" para o seu e-mail para não gastar cota da service account
+        permission = {
+            'type': 'user',
+            'role': 'owner',
+            'emailAddress': SEU_EMAIL_PESSOAL
+        }
+        # transferOwnership=True é o que resolve o erro de cota definitivamente
+        drive_service.permissions().create(
+            fileId=file_id,
+            body=permission,
+            transferOwnership=True,
+            supportsAllDrives=True
+        ).execute()
+        
+        return f"https://drive.google.com/uc?id={file_id}"
     except Exception as e:
         st.error(f"Erro técnico: {e}")
         return None
@@ -97,7 +114,8 @@ if codigo_busca:
             
             if st.button("Confirmar Lançamento") and resp:
                 try:
-                    saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                    valor_limpo = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
+                    saldo_ant = float(valor_limpo)
                 except:
                     saldo_ant = 0.0
                     
@@ -108,12 +126,12 @@ if codigo_busca:
                 st.success("Lançado!")
                 st.rerun()
 
-        # --- HISTÓRICO COM COLUNAS LADO A LADO ---
+        # --- HISTÓRICO COM COLUNAS TIPO MOV AO LADO DE VALOR MOV ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # NOVA ORDEM: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
+        # Ordem: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
         
         def colorir(row):
