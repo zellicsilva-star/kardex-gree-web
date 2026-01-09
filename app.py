@@ -12,8 +12,8 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-# IMPORTANTE: Coloque seu e-mail aqui para a posse das fotos
-SEU_EMAIL_DONO_DRIVE = "zellic.silva@gmail.com" 
+# IMPORTANTE: Coloque seu e-mail pessoal aqui
+SEU_EMAIL_DONO_DRIVE = "seu-email@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
@@ -56,51 +56,50 @@ codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip(
 if codigo_busca:
     dados = sheet.get_all_values()
     if len(dados) > 1:
-        # Criamos o DataFrame e limpamos os nomes das colunas (removendo acentos e espaços)
+        # Criamos o DataFrame e padronizamos cabeçalhos
         df = pd.DataFrame(dados[1:], columns=dados[0])
+        original_cols = list(df.columns) # Guarda a ordem real das colunas (A, B, C...)
+        
         df.columns = df.columns.str.strip().str.upper()
-        
-        # Localização costuma estar na Coluna J (índice 9 no Python, pois começa em 0)
-        # Vamos tentar pegar pelo nome, se não existir, pegamos pela posição J
-        colunas_lista = list(df.columns)
-        
         df['CÓDIGO'] = df['CÓDIGO'].str.strip().str.upper()
+        
         item_rows = df[df['CÓDIGO'] == codigo_busca]
         
         if not item_rows.empty:
-            item_atual = item_rows.tail(1).to_dict('records')[0]
+            # Pega a linha mais recente
+            linha_bruta = item_rows.tail(1).values[0] # Dados puros da linha
+            item_dict = item_rows.tail(1).to_dict('records')[0]
             
-            # --- LÓGICA DA LOCALIZAÇÃO (COLUNA J) ---
-            desc = item_atual.get('DESCRIÇÃO') or item_atual.get('DESCRICAO') or "Sem descrição"
-            saldo = item_atual.get('SALDO ATUAL') or item_atual.get('SALDO') or "0"
+            # 1. SALDO (Coluna F - índice 5)
+            saldo = item_dict.get('SALDO ATUAL') or item_dict.get('SALDO') or "0"
             
-            # Tentativa 1: Pelo nome "LOCALIZAÇÃO"
-            # Tentativa 2: Pelo nome "LOCALIZACAO"
-            # Tentativa 3: Pela posição física (Coluna J é a 10ª coluna, índice 9)
-            local = item_atual.get('LOCALIZAÇÃO') or item_atual.get('LOCALIZACAO')
-            if not local and len(colunas_lista) >= 10:
-                nome_coluna_j = colunas_lista[9] # Pega o nome da 10ª coluna
-                local = item_atual.get(nome_coluna_j)
+            # 2. DESCRIÇÃO (Coluna C - índice 2)
+            desc = item_dict.get('DESCRIÇÃO') or item_dict.get('DESCRICAO') or "Sem descrição"
             
-            local = local if local else "Não informada"
-            foto_link = item_atual.get('FOTO') or ""
+            # 3. LOCALIZAÇÃO (Coluna J - índice 9)
+            # Tentamos pelo nome, se falhar, pegamos direto pela posição 10 (índice 9)
+            local = item_dict.get('LOCALIZAÇÃO') or item_dict.get('LOCALIZACAO')
+            if (not local or local == "Não definida") and len(linha_bruta) >= 10:
+                local = linha_bruta[9] # Posição exata da Coluna J
+
+            foto_link = item_dict.get('FOTO') or ""
 
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("SALDO ATUAL", saldo)
-                st.info(f"📍 **Localização:** {local}")
                 st.write(f"**Descrição:** {desc}")
+                # Localização agora EMBAIXO da descrição
+                st.info(f"📍 **Localização:** {local if local else 'Não informada'}")
             
             with col2:
                 if foto_link and "http" in str(foto_link):
-                    st.image(foto_link, caption=f"Foto de {codigo_busca}", use_container_width=True)
+                    st.image(foto_link, use_container_width=True)
                 else:
                     nova_foto = st.camera_input("Cadastrar Foto")
                     if nova_foto:
                         url = upload_foto(nova_foto, codigo_busca)
                         if url:
                             cell = sheet.find(codigo_busca)
-                            # Atualiza a coluna 11 (K) com o link da foto
                             sheet.update_cell(cell.row, 11, url) 
                             st.success("Foto salva!")
                             st.rerun()
@@ -124,12 +123,12 @@ if codigo_busca:
                     
                     data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem das colunas para gravar nova linha
+                    # Salva respeitando a estrutura de 11 colunas
                     nova_linha = [data_p, codigo_busca, desc, qtd, tipo, round(novo_saldo, 2), "", resp, "", local, foto_link]
                     
                     try:
                         sheet.append_row(nova_linha)
-                        st.success("Lançamento realizado!")
+                        st.success("Lançado com sucesso!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
@@ -144,7 +143,5 @@ if codigo_busca:
                 return [f'{cor}; font-weight: bold'] * len(row)
 
             st.dataframe(hist[colunas_existentes].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
-        else:
-            st.error(f"Código '{codigo_busca}' não encontrado.")
     else:
-        st.warning("Planilha vazia.")
+        st.error("Planilha sem dados.")
