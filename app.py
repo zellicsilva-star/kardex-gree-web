@@ -2,26 +2,25 @@ import streamlit as st
 import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 import datetime
 import pytz
+from PIL import Image
 import io
+import base64
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" # Sua pasta nova
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
-st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
+st.set_page_config(page_title="GREE - Kardex Web (Plano B)", page_icon="📦", layout="wide")
 
-# --- CONEXÃO ---
+# --- CONEXÃO COM A PLANILHA ---
 @st.cache_resource
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
     if "gcp_service_account" not in st.secrets:
-        st.error("Credenciais não encontradas nos Secrets.")
+        st.error("⚠️ Credenciais não encontradas nos Secrets.")
         st.stop()
         
     creds_dict = st.secrets["gcp_service_account"]
@@ -29,41 +28,42 @@ def conectar():
     
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
-    drive = build('drive', 'v3', credentials=creds)
-    
-    return planilha, drive
+    return planilha
 
 try:
-    sheet, drive_service = conectar()
+    sheet = conectar()
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO DE UPLOAD (DRIVE) ---
-def upload_foto(arquivo, codigo):
+# --- FUNÇÃO PARA CONVERTER FOTO EM TEXTO LEVE ---
+def processar_foto_para_celula(arquivo_foto):
     try:
-        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
-        media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
+        image = Image.open(arquivo_foto)
         
-        # Tenta salvar no Drive (requer faturamento ativo)
-        file = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
+        # Reduz o tamanho (300px é ótimo para ver no celular e não pesa na planilha)
+        image.thumbnail((300, 300))
         
-        return f"https://drive.google.com/uc?id={file.get('id')}"
+        # Converte para JPEG com compressão para ficar bem leve
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=60)
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        # Transforma em texto (Base64)
+        b64_string = base64.b64encode(img_byte_arr).decode('utf-8')
+        return f"data:image/jpeg;base64,{b64_string}"
     except Exception as e:
-        st.error(f"Erro no Upload (Drive): {e}")
+        st.error(f"Erro ao processar foto: {e}")
         return None
 
 # --- INTERFACE ---
-st.title("📦 GREE - Kardex Digital Web")
+st.title("📦 GREE - Kardex Digital")
+st.info("🚀 Modo Plano B Ativo: Fotos salvas diretamente na planilha.")
+
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip()
 
 if codigo_busca:
-    # Busca dados
+    # Busca dados na planilha
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
     item_rows = df[df['CÓDIGO'] == codigo_busca]
@@ -78,24 +78,23 @@ if codigo_busca:
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
         with col2:
-            # Tenta pegar a foto (compatível com link ou base64 antigo)
+            # Verifica se já existe foto (Link ou Texto Base64)
             dado_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             
-            if dado_foto and len(str(dado_foto)) > 5:
+            if dado_foto and len(str(dado_foto)) > 10:
                 st.image(dado_foto, use_container_width=True)
             else:
-                st.info("📸 Item sem foto.")
-                nova_foto = st.camera_input("Tirar Foto Agora")
+                st.warning("📸 Item sem foto.")
+                nova_foto = st.camera_input("Tirar Foto")
                 
                 if nova_foto:
-                    with st.spinner("Salvando foto no Drive..."):
-                        url = upload_foto(nova_foto, codigo_busca)
-                        
-                    if url:
-                        cell = sheet.find(codigo_busca)
-                        sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva com sucesso!")
-                        st.rerun()
+                    with st.spinner("Salvando na planilha..."):
+                        foto_em_texto = processar_foto_para_celula(nova_foto)
+                        if foto_em_texto:
+                            cell = sheet.find(codigo_busca)
+                            sheet.update_cell(cell.row, 11, foto_em_texto) # Coluna K
+                            st.success("✅ Foto salva com sucesso!")
+                            st.rerun()
 
         st.divider()
 
@@ -120,6 +119,7 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
+                    # Mantém a foto na nova linha de histórico
                     nova_linha = [
                         dt_planilha, 
                         codigo_busca, 
@@ -135,35 +135,16 @@ if codigo_busca:
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
-                    st.success("✅ Movimentação registrada!")
+                    st.success("✅ Lançamento realizado!")
                     st.rerun()
                 else:
-                    st.warning("⚠️ Preencha o Responsável.")
+                    st.warning("⚠️ Informe o responsável.")
 
-        # --- HISTÓRICO ---
-        st.subheader("📜 Histórico Recente")
+        # --- TABELA DE HISTÓRICO ---
+        st.subheader("📜 Histórico")
         hist = item_rows.tail(5).iloc[::-1].copy()
-        
         cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
-        cols_finais = [c for c in cols_desejadas if c in hist.columns]
-        
-        if 'DATA' in hist.columns:
-             hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
-             
-        hist_final = hist[cols_finais]
-
-        def style_rows(row):
-            if 'TIPO MOV.' in row:
-                if row['TIPO MOV.'] == 'SAÍDA':
-                    return ['color: #d32f2f; font-weight: bold'] * len(row)
-                elif row['TIPO MOV.'] == 'ENTRADA':
-                    return ['color: #2e7d32; font-weight: bold'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(
-            hist_final.style.apply(style_rows, axis=1),
-            hide_index=True,
-            use_container_width=True
-        )
+        cols_existentes = [c for c in cols_desejadas if c in hist.columns]
+        st.dataframe(hist[cols_existentes], hide_index=True, use_container_width=True)
     else:
         st.error("Código não encontrado.")
