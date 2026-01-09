@@ -33,7 +33,13 @@ def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        # CORREÇÃO: Adicionado supportsAllDrives=True para permitir upload via Service Account
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception:
         return None
@@ -72,7 +78,7 @@ if codigo_busca:
                         st.success("Foto salva com sucesso!")
                         st.rerun()
                     else:
-                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA.")
+                        st.error("Erro ao salvar foto. Verifique se a API do Drive está ATIVA e se a pasta está compartilhada com o e-mail do JSON.")
 
         st.divider()
 
