@@ -33,7 +33,15 @@ def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        
+        # CORREÇÃO AQUI: Adicionado supportsAllDrives=True para garantir permissão de escrita
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
+        
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception:
         return None
