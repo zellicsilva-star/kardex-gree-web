@@ -21,11 +21,9 @@ def conectar_servicos():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive_service = build('drive', 'v3', credentials=creds)
-    
     return planilha, drive_service
 
 try:
@@ -42,7 +40,7 @@ def upload_foto(arquivo, codigo):
         file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         return f"https://drive.google.com/uc?id={file.get('id')}"
     except Exception as e:
-        st.error(f"Erro na permissão do Google Drive: {e}. Verifique se o e-mail do JSON é EDITOR na pasta.")
+        st.error("⚠️ ERRO DE PERMISSÃO: A API do Google Drive pode estar desativada no Cloud Console ou a pasta não deu acesso de EDITOR ao e-mail do JSON.")
         return None
 
 # --- INTERFACE ---
@@ -53,7 +51,6 @@ codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", "").upper().strip(
 if codigo_busca:
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
-    
     item_rows = df[df['CÓDIGO'] == codigo_busca]
     
     if not item_rows.empty:
@@ -67,7 +64,6 @@ if codigo_busca:
         
         with col2:
             link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
-            
             if link_foto:
                 st.image(link_foto, caption="Foto do Produto")
             else:
@@ -100,7 +96,6 @@ if codigo_busca:
                     
                     data_hora = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
                     
-                    # Ordem: DATA, CÓDIGO, DESCRIÇÃO, VALOR MOV., TIPO MOV., SALDO ATUAL, REQUISIÇÃO, RESPONSÁVEL, ARMAZÉM, LOCALIZAÇÃO, FOTO
                     nova_linha = [
                         data_hora, codigo_busca, item_atual['DESCRIÇÃO'].values[0],
                         qtd, tipo, round(novo_saldo, 2),
@@ -111,10 +106,12 @@ if codigo_busca:
                     st.success("Lançado com sucesso!")
                     st.rerun()
 
-        st.subheader("📜 Histórico Recente")
-        # Mostrar as últimas 5 movimentações desse código
-        hist = item_rows.tail(5).iloc[::-1]
-        st.dataframe(hist[['DATA', 'TIPO MOV.', 'VALOR MOV.', 'RESPONSÁVEL']], hide_index=True)
+        # --- HISTÓRICO ATUALIZADO ---
+        st.subheader("📜 Histórico Recente (Manaus)")
+        hist_exibir = item_rows.tail(5).iloc[::-1].copy()
+        # Colunas solicitadas: Data, Tipo, Quantidade (Valor Mov), Responsável e Saldo Atual
+        colunas_v = ['DATA', 'TIPO MOV.', 'VALOR MOV.', 'RESPONSÁVEL', 'SALDO ATUAL']
+        st.dataframe(hist_exibir[colunas_v], hide_index=True, use_container_width=True)
         
     else:
         st.error("Código não encontrado.")
