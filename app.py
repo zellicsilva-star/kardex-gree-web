@@ -15,7 +15,7 @@ FUSO_HORARIO = pytz.timezone('America/Manaus')
 
 # --- IMPORTANTE: COLOQUE SEU E-MAIL AQUI ---
 # O robô vai passar a foto para este e-mail para não ocupar espaço dele
-SEU_EMAIL_DONO_DRIVE = "seu.email.real@gmail.com" 
+SEU_EMAIL_DONO_DRIVE = "zellic.silva@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
