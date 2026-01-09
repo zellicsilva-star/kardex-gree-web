@@ -10,7 +10,7 @@ import io
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" # Sua pasta nova
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" 
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
@@ -39,13 +39,12 @@ except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO DE UPLOAD (DRIVE) ---
+# --- FUNÇÃO DE UPLOAD (Mantida na estrutura, mas não será chamada pelo botão) ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # Tenta salvar no Drive (requer faturamento ativo)
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -73,8 +72,12 @@ if codigo_busca:
         
         col1, col2 = st.columns(2)
         with col1:
+            # --- ALTERAÇÃO SOLICITADA: DESCRIÇÃO NO LUGAR DO SALDO ---
+            st.markdown(f"### {item_atual['DESCRIÇÃO'].values[0]}")
+            
+            # --- ALTERAÇÃO SOLICITADA: SALDO NO LUGAR DA DESCRIÇÃO ---
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
-            st.write(f"**Descrição:** {item_atual['DESCRIÇÃO'].values[0]}")
+            
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
         with col2:
@@ -85,17 +88,7 @@ if codigo_busca:
                 st.image(dado_foto, use_container_width=True)
             else:
                 st.info("📸 Item sem foto.")
-                nova_foto = st.camera_input("Tirar Foto Agora")
-                
-                if nova_foto:
-                    with st.spinner("Salvando foto no Drive..."):
-                        url = upload_foto(nova_foto, codigo_busca)
-                        
-                    if url:
-                        cell = sheet.find(codigo_busca)
-                        sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva com sucesso!")
-                        st.rerun()
+                # --- ALTERAÇÃO SOLICITADA: REMOVIDA A OPÇÃO DE TIRAR FOTO AQUI ---
 
         st.divider()
 
