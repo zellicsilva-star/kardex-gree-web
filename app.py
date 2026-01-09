@@ -18,31 +18,24 @@ st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wid
 # --- CONEXÃO ---
 @st.cache_resource
 def conectar_banco():
-    # Escopos para Planilha e Drive
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # Verifica se os Secrets existem para não dar erro de tela branca
     if "gcp_service_account" not in st.secrets:
-        st.error("Erro: Credenciais (Secrets) não encontradas no Streamlit Cloud.")
+        st.error("Configure os Secrets no painel do Streamlit!")
         st.stop()
-        
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    
     client = gspread.authorize(creds)
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive = build('drive', 'v3', credentials=creds)
-    
     return planilha, drive
 
-# Tenta conectar
 try:
     sheet, drive_service = conectar_banco()
 except Exception as e:
-    st.error(f"Erro ao conectar com o Google: {e}")
+    st.error(f"Erro de conexão: {e}")
     st.stop()
 
-# --- FUNÇÃO UPLOAD ---
+# --- FUNÇÃO FOTO ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
@@ -73,7 +66,7 @@ if codigo_busca:
         with col2:
             link_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns and item_atual['FOTO'].values[0] else None
             if link_foto:
-                st.image(link_foto)
+                st.image(link_foto, use_container_width=True)
             else:
                 nova_foto = st.camera_input("Cadastrar Foto")
                 if nova_foto:
@@ -83,8 +76,6 @@ if codigo_busca:
                         sheet.update_cell(cell.row, 11, url) 
                         st.success("Foto salva!")
                         st.rerun()
-                    else:
-                        st.error("Erro no Drive. Verifique se a API está ATIVA e se o e-mail do JSON é EDITOR na pasta.")
 
         st.divider()
         
@@ -94,33 +85,26 @@ if codigo_busca:
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento") and resp:
+                saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
+                novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                 data_p = datetime.datetime.now(FUSO_HORARIO).strftime("%d/%m/%Y %H:%M")
-                # Salva na planilha mantendo a ordem das colunas
-                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, "", "", resp, "", "", link_foto or ""])
+                
+                sheet.append_row([data_p, codigo_busca, item_atual['DESCRIÇÃO'].values[0], qtd, tipo, round(novo_saldo,2), "", resp, "", "", link_foto or ""])
                 st.success("Lançado!")
                 st.rerun()
 
         # --- HISTÓRICO COM CORES E ORDEM SOLICITADA ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
-        
-        # Formata data
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # Ordem: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
+        # Ordem solicitada: DATA | VALOR MOV. | SALDO ATUAL | TIPO MOV. | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'SALDO ATUAL', 'TIPO MOV.', 'RESPONSÁVEL']
         
-        def colorir_linha(row):
-            if row['TIPO MOV.'] == 'SAÍDA':
-                return ['color: #d32f2f; font-weight: bold'] * len(row)
-            elif row['TIPO MOV.'] == 'ENTRADA':
-                return ['color: #2e7d32; font-weight: bold'] * len(row)
-            return [''] * len(row)
+        def colorir(row):
+            cor = 'color: #d32f2f' if row['TIPO MOV.'] == 'SAÍDA' else 'color: #2e7d32' if row['TIPO MOV.'] == 'ENTRADA' else ''
+            return [f'{cor}; font-weight: bold'] * len(row)
 
-        st.dataframe(
-            hist[colunas_v].style.apply(colorir_linha, axis=1),
-            hide_index=True,
-            use_container_width=True
-        )
+        st.dataframe(hist[colunas_v].style.apply(colorir, axis=1), hide_index=True, use_container_width=True)
     else:
         st.error("Código não encontrado.")
