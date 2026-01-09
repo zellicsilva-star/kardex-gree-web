@@ -12,14 +12,19 @@ import io
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1AFLfBEVqnJfGRJnCNvE7BC5k2puAY366"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
-# IMPORTANTE: Coloque seu e-mail do Google abaixo para evitar o erro de cota
+# IMPORTANTE: Use o seu e-mail do Google Drive aqui
 SEU_EMAIL_DONO_DRIVE = "seu-email@gmail.com" 
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
 
 @st.cache_resource
 def conectar_banco():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    # Escopos ampliados para permitir transferência de propriedade
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file"
+    ]
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
@@ -35,41 +40,29 @@ except Exception as e:
 
 def upload_foto(arquivo, codigo):
     try:
-        # Cria o arquivo na pasta pai (seu Drive)
-        file_metadata = {
-            'name': f"foto_{codigo}.png", 
-            'parents': [ID_PASTA_FOTOS]
-        }
+        file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
         media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype='image/png')
         
-        # O parâmetro supportsAllDrives ajuda a contornar restrições de cota
+        # Upload simples
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
-            fields='id',
-            supportsAllDrives=True 
+            fields='id'
         ).execute()
         
         file_id = file.get('id')
 
-        # TRANSFERE A PROPRIEDADE: Isso resolve o erro 'storageQuotaExceeded'
-        # O arquivo passa a ser seu e usa o seu espaço de 15GB+
-        permission = {
-            'type': 'user',
-            'role': 'owner',
-            'emailAddress': SEU_EMAIL_DONO_DRIVE
-        }
+        # Transferência de propriedade para evitar erro de cota (403 storageQuotaExceeded)
         drive_service.permissions().create(
             fileId=file_id,
-            body=permission,
-            transferOwnership=True,
-            supportsAllDrives=True
+            body={'type': 'user', 'role': 'owner', 'emailAddress': SEU_EMAIL_DONO_DRIVE},
+            transferOwnership=True
         ).execute()
         
         return f"https://drive.google.com/uc?id={file_id}"
     except Exception as e:
-        st.error(f"Erro técnico no upload: {e}")
-        return None
+        # Se falhar a transferência, tentamos retornar o link mesmo assim
+        return f"https://drive.google.com/uc?id={file_id}" if 'file_id' in locals() else None
 
 # --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
@@ -98,10 +91,9 @@ if codigo_busca:
                 if nova_foto:
                     url = upload_foto(nova_foto, codigo_busca)
                     if url:
-                        # Grava o link na coluna 11 (FOTO)
                         cell = sheet.find(codigo_busca)
                         sheet.update_cell(cell.row, 11, url) 
-                        st.success("Foto salva com sucesso!")
+                        st.success("Foto salva!")
                         st.rerun()
 
         st.divider()
@@ -117,12 +109,11 @@ if codigo_busca:
                 st.success("Lançado!")
                 st.rerun()
 
-        # --- HISTÓRICO COM COLUNAS REORDENADAS ---
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         hist['DATA'] = hist['DATA'].apply(lambda x: str(x).split(' ')[0])
         
-        # Ordem solicitada: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
+        # ORDEM SOLICITADA: DATA | VALOR MOV. | TIPO MOV. | SALDO ATUAL | RESPONSÁVEL
         colunas_v = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'RESPONSÁVEL']
         
         def colorir(row):
