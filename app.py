@@ -87,7 +87,27 @@ if codigo_busca:
             # Exibição do Saldo
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
             
+            # Exibição da Localização Original
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
+            
+            # --- NOVA FUNCIONALIDADE: BOTÃO PARA ALTERAR LOCALIZAÇÃO ---
+            with st.expander("✏️ Editar Localização"):
+                nova_loc = st.text_input("Nova Localização", value=item_atual['LOCALIZAÇÃO'].values[0], key="edit_loc").upper()
+                if st.button("Salvar Localização"):
+                    try:
+                        # Identifica a linha exata no Google Sheets (Index do Pandas + 2 para compensar header e base 0)
+                        linha_planilha = item_atual.index[0] + 2
+                        
+                        # Identifica a coluna 'LOCALIZAÇÃO'
+                        coluna_idx = dados[0].index('LOCALIZAÇÃO') + 1
+                        
+                        # Atualiza a célula
+                        sheet.update_cell(linha_planilha, coluna_idx, nova_loc)
+                        st.success("Localização atualizada com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar localização: {e}")
+            # -----------------------------------------------------------
             
         with col2:
             # Visualização da Foto
