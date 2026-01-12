@@ -7,6 +7,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # Adicio
 import datetime
 import pytz
 import io
+from PIL import Image # <--- IMPORTAÇÃO NECESSÁRIA PARA ROTACIONAR
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
@@ -134,7 +135,18 @@ if codigo_busca:
                 with st.spinner("Carregando imagem..."):
                     imagem_bytes = baixar_imagem_drive(link_limpo)
                     if imagem_bytes:
-                        st.image(imagem_bytes, use_container_width=True)
+                        # --- ÁREA DE ROTAÇÃO ---
+                        try:
+                            # Abre a imagem usando PIL a partir dos bytes baixados
+                            img_pil = Image.open(io.BytesIO(imagem_bytes))
+                            # Rotaciona 90 graus (ajuste para 270 ou -90 se ficar de cabeça para baixo)
+                            # expand=True garante que a imagem inteira apareça após rodar
+                            img_rotated = img_pil.rotate(90, expand=True) 
+                            st.image(img_rotated, use_container_width=True)
+                        except:
+                             # Se der erro na rotação, mostra a original
+                            st.image(imagem_bytes, use_container_width=True)
+                        # -----------------------
                     else:
                         st.image(link_limpo, use_container_width=True) # Tenta link direto se falhar
             else:
