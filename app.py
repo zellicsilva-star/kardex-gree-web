@@ -3,7 +3,7 @@ import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # Adicionado Download
 import datetime
 import pytz
 import io
@@ -52,19 +52,48 @@ def upload_foto(arquivo, codigo):
             supportsAllDrives=True
         ).execute()
         
-        return f"https://drive.google.com/uc?id={file.get('id')}"
+        return f"https://drive.google.com/uc?export=view&id={file.get('id')}"
     except Exception as e:
         st.error(f"Erro no Upload (Drive): {e}")
         return None
 
+# --- NOVA FUNÇÃO: BAIXAR IMAGEM (Para funcionar no Site/GitHub) ---
+def baixar_imagem_drive(link_planilha):
+    if not link_planilha: return None
+    try:
+        file_id = None
+        url = str(link_planilha).strip()
+        
+        if "id=" in url:
+            file_id = url.split("id=")[1].split("&")[0]
+        elif "/d/" in url:
+            file_id = url.split("/d/")[1].split("/")[0]
+            
+        if not file_id: return None
+
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+        return fh.getvalue()
+    except Exception:
+        return None
+
+# --- LIMPEZA DE LINK ---
+def limpar_link(valor):
+    v = str(valor).strip()
+    if v.startswith('=IMAGE("'): return v[8:-2]
+    return v
+
 # --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
 
-# --- LÓGICA DE QR CODE: Captura o código da URL se existir ---
+# --- LÓGICA DE QR CODE ---
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 
-# O campo de busca recebe o valor vindo do QR Code (URL) como padrão
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
 if codigo_busca:
@@ -72,7 +101,6 @@ if codigo_busca:
     dados = sheet.get_all_values()
     df = pd.DataFrame(dados[1:], columns=dados[0])
     
-    # --- AJUSTE PARA NÃO ENGOLIR O ZERO: Força a coluna CÓDIGO a ser texto ---
     df['CÓDIGO'] = df['CÓDIGO'].astype(str).str.strip()
     item_rows = df[df['CÓDIGO'] == codigo_busca]
     
@@ -81,40 +109,34 @@ if codigo_busca:
         
         col1, col2 = st.columns(2)
         with col1:
-            # Exibição da Descrição com fonte reduzida
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
-            
-            # Exibição do Saldo
             st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
-            
-            # Exibição da Localização Original
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
-            # --- NOVA FUNCIONALIDADE: BOTÃO PARA ALTERAR LOCALIZAÇÃO ---
             with st.expander("✏️ Editar Localização"):
                 nova_loc = st.text_input("Nova Localização", value=item_atual['LOCALIZAÇÃO'].values[0], key="edit_loc").upper()
                 if st.button("Salvar Localização"):
                     try:
-                        # Identifica a linha exata no Google Sheets (Index do Pandas + 2 para compensar header e base 0)
                         linha_planilha = item_atual.index[0] + 2
-                        
-                        # Identifica a coluna 'LOCALIZAÇÃO'
                         coluna_idx = dados[0].index('LOCALIZAÇÃO') + 1
-                        
-                        # Atualiza a célula
                         sheet.update_cell(linha_planilha, coluna_idx, nova_loc)
                         st.success("Localização atualizada com sucesso!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao atualizar localização: {e}")
-            # -----------------------------------------------------------
             
         with col2:
-            # Visualização da Foto
-            dado_foto = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
+            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE (FUNCIONAL NO SITE) ---
+            dado_foto_raw = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
+            link_limpo = limpar_link(dado_foto_raw)
             
-            if dado_foto and len(str(dado_foto)) > 5:
-                st.image(dado_foto, use_container_width=True)
+            if link_limpo and len(link_limpo) > 10:
+                with st.spinner("Carregando imagem..."):
+                    imagem_bytes = baixar_imagem_drive(link_limpo)
+                    if imagem_bytes:
+                        st.image(imagem_bytes, use_container_width=True)
+                    else:
+                        st.image(link_limpo, use_container_width=True) # Tenta link direto se falhar
             else:
                 st.info("📸 Item sem foto.")
 
@@ -127,6 +149,8 @@ if codigo_busca:
             doc = st.text_input("REQUISIÇÃO/NF").upper()
             resp = st.text_input("RESPONSÁVEL").upper()
             
+            nova_foto_upload = st.file_uploader("Atualizar Foto (Opcional)", type=["png", "jpg", "jpeg"])
+            
             if st.button("Confirmar Lançamento"):
                 if resp:
                     try:
@@ -138,10 +162,20 @@ if codigo_busca:
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
                     else: novo_saldo = qtd 
                     
+                    # Lógica da Foto
+                    link_foto_final = link_limpo
+                    
+                    if nova_foto_upload:
+                        with st.spinner("Enviando foto para o Drive..."):
+                            link_gerado = upload_foto(nova_foto_upload, codigo_busca)
+                            if link_gerado:
+                                link_foto_final = link_gerado
+                                
+                    valor_foto_planilha = link_foto_final if link_foto_final else ""
+
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # --- AJUSTE PARA NÃO ENGOLIR O ZERO: Adicionado o apóstrofo antes do código ---
                     nova_linha = [
                         dt_planilha, 
                         f"'{codigo_busca}", 
@@ -153,7 +187,7 @@ if codigo_busca:
                         resp, 
                         item_atual['ARMAZÉM'].values[0], 
                         item_atual['LOCALIZAÇÃO'].values[0],
-                        dado_foto or ""
+                        valor_foto_planilha
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
