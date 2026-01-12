@@ -139,8 +139,8 @@ if codigo_busca:
                         try:
                             # Abre a imagem usando PIL a partir dos bytes baixados
                             img_pil = Image.open(io.BytesIO(imagem_bytes))
-                            # Rotaciona 90 graus (ajuste para 270 ou -90 se ficar de cabeça para baixo)
-                            # expand=True garante que a imagem inteira apareça após rodar
+                            # Rotaciona 90 graus para ficar vertical. 
+                            # Se precisar, mude 90 para 270 ou 180.
                             img_rotated = img_pil.rotate(90, expand=True) 
                             st.image(img_rotated, use_container_width=True)
                         except:
