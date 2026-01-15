@@ -113,15 +113,9 @@ if codigo_busca:
         with col1:
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
-            try:
-                saldo_val = float(str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.'))
-            except:
-                saldo_val = 0.0
-
-            if saldo_val <= 5: 
-                st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0], delta="CRÍTICO (BAIXO)", delta_color="inverse")
-            else:
-                st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
+            # --- MODIFICADO: Exibe apenas o saldo padrão, sem alerta de crítico ---
+            st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
+            # ---------------------------------------------------------------------
 
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
