@@ -7,7 +7,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import datetime
 import pytz
 import io
-import time # <--- ADICIONADO PARA SUAVIDADE
+import time 
 from PIL import Image 
 
 # --- CONFIGURAÇÕES ---
@@ -112,7 +112,17 @@ if codigo_busca:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
-            st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
+            
+            try:
+                saldo_val = float(str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.'))
+            except:
+                saldo_val = 0.0
+
+            if saldo_val <= 5: 
+                st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0], delta="CRÍTICO (BAIXO)", delta_color="inverse")
+            else:
+                st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
+
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
             with st.expander("✏️ Editar Localização"):
@@ -123,16 +133,14 @@ if codigo_busca:
                         coluna_idx = dados[0].index('LOCALIZAÇÃO') + 1
                         sheet.update_cell(linha_planilha, coluna_idx, nova_loc)
                         
-                        # --- IMPLEMENTAÇÃO ITEM 1 E 3 (Toast + Suavidade) ---
                         st.toast("Localização atualizada com sucesso!", icon='📍')
-                        time.sleep(1.5) # Pausa para leitura
+                        time.sleep(1.5) 
                         st.rerun()
-                        # ----------------------------------------------------
                     except Exception as e:
                         st.error(f"Erro ao atualizar localização: {e}")
             
         with col2:
-            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE (FUNCIONAL NO SITE) ---
+            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE ---
             dado_foto_raw = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             link_limpo = limpar_link(dado_foto_raw)
             
@@ -140,20 +148,14 @@ if codigo_busca:
                 with st.spinner("Carregando imagem..."):
                     imagem_bytes = baixar_imagem_drive(link_limpo)
                     if imagem_bytes:
-                        # --- ÁREA DE ROTAÇÃO ---
                         try:
-                            # Abre a imagem usando PIL a partir dos bytes baixados
                             img_pil = Image.open(io.BytesIO(imagem_bytes))
-                            # Rotaciona 90 graus para ficar vertical. 
-                            # Se precisar, mude 90 para 270 ou 180.
                             img_rotated = img_pil.rotate(270, expand=True) 
                             st.image(img_rotated, use_container_width=True)
                         except:
-                             # Se der erro na rotação, mostra a original
                             st.image(imagem_bytes, use_container_width=True)
-                        # -----------------------
                     else:
-                        st.image(link_limpo, use_container_width=True) # Tenta link direto se falhar
+                        st.image(link_limpo, use_container_width=True)
             else:
                 st.info("📸 Item sem foto.")
 
@@ -166,8 +168,6 @@ if codigo_busca:
             doc = st.text_input("REQUISIÇÃO/NF").upper()
             resp = st.text_input("RESPONSÁVEL").upper()
             
-            # OPÇÃO DE FOTO REMOVIDA AQUI
-            
             if st.button("Confirmar Lançamento"):
                 if resp:
                     try:
@@ -179,9 +179,7 @@ if codigo_busca:
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
                     else: novo_saldo = qtd 
                     
-                    # Lógica da Foto (Mantém a foto antiga, já que não tem upload novo)
                     link_foto_final = link_limpo
-                                
                     valor_foto_planilha = link_foto_final if link_foto_final else ""
 
                     agora = datetime.datetime.now(FUSO_HORARIO)
@@ -203,13 +201,39 @@ if codigo_busca:
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
                     
-                    # --- IMPLEMENTAÇÃO ITEM 1 E 3 (Toast + Suavidade) ---
                     st.toast("Movimentação registrada com sucesso!", icon='✅')
-                    time.sleep(1.5) # Pausa para leitura antes do refresh
+                    time.sleep(1.5) 
                     st.rerun()
-                    # ----------------------------------------------------
                 else:
                     st.warning("⚠️ Preencha o Responsável.")
+        
+        # --- EXCLUSÃO DE REGISTRO (NOVO) ---
+        with st.expander("🗑️ EXCLUIR MOVIMENTAÇÃO RECENTE (CORREÇÃO)"):
+            # Cria um dicionário para mapear a string legível -> índice original do dataframe
+            opcoes_exclusao = {
+                f"{row['DATA']} | {row['TIPO MOV.']} | Qtd: {row['VALOR MOV.']} | Resp: {row['RESPONSÁVEL']}": i 
+                for i, row in item_rows.iloc[::-1].iterrows() # Inverte para mostrar os mais recentes primeiro
+            }
+            
+            if not opcoes_exclusao:
+                st.info("Não há registros para excluir deste item.")
+            else:
+                escolha = st.selectbox("Selecione o registro para excluir:", list(opcoes_exclusao.keys()))
+                
+                if st.button("🗑️ Confirmar Exclusão"):
+                    # O índice do DataFrame Pandas começa em 0
+                    # A planilha tem cabeçalho (linha 1)
+                    # Então, Linha na Planilha = Índice do DataFrame + 2
+                    index_df = opcoes_exclusao[escolha]
+                    linha_para_deletar = index_df + 2
+                    
+                    try:
+                        sheet.delete_rows(linha_para_deletar)
+                        st.toast(f"Registro excluído da linha {linha_para_deletar}!", icon='🗑️')
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
 
         # --- HISTÓRICO ---
         st.subheader("📜 Histórico Recente")
