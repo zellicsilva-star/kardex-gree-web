@@ -11,7 +11,7 @@ from PIL import Image # <--- IMPORTAÇÃO NECESSÁRIA PARA ROTACIONAR
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
-ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC" 
+ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
 FUSO_HORARIO = pytz.timezone('America/Manaus')
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
@@ -95,7 +95,19 @@ st.title("📦 GREE - Kardex Digital Web")
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 
-codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
+# --- MODIFICAÇÃO: COLUNAS PARA BOTÃO AO LADO ---
+col_input, col_btn = st.columns([5, 1])
+
+with col_input:
+    codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
+
+with col_btn:
+    st.write("") # Espaçador visual para alinhar verticalmente
+    st.write("") 
+    if st.button("🔄 NOVA LEITURA"):
+        st.query_params.clear() # Limpa a URL
+        st.rerun() # Recarrega a página limpa
+# -----------------------------------------------
 
 if codigo_busca:
     # Busca dados
