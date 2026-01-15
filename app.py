@@ -3,11 +3,13 @@ import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # Adicionado Download
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import datetime
 import pytz
 import io
-from PIL import Image # <--- IMPORTAÇÃO NECESSÁRIA PARA ROTACIONAR
+from PIL import Image
+import cv2  # Necessário para ler o QR Code da imagem
+import numpy as np # Necessário para converter a imagem para o OpenCV
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
@@ -58,7 +60,7 @@ def upload_foto(arquivo, codigo):
         st.error(f"Erro no Upload (Drive): {e}")
         return None
 
-# --- NOVA FUNÇÃO: BAIXAR IMAGEM (Para funcionar no Site/GitHub) ---
+# --- NOVA FUNÇÃO: BAIXAR IMAGEM ---
 def baixar_imagem_drive(link_planilha):
     if not link_planilha: return None
     try:
@@ -91,24 +93,61 @@ def limpar_link(valor):
 # --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital Web")
 
-# --- LÓGICA DE QR CODE ---
+# --- LÓGICA DE QR CODE E CÂMERA ---
+if "mostrar_camera" not in st.session_state:
+    st.session_state.mostrar_camera = False
+
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 
-# --- MODIFICAÇÃO: COLUNAS PARA BOTÃO AO LADO ---
-col_input, col_btn = st.columns([5, 1])
+# Layout das colunas: Input | Botão Camera | Botão Limpar
+col_input, col_cam, col_reset = st.columns([5, 1, 1])
 
 with col_input:
     codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
-with col_btn:
-    st.write("") # Espaçador visual para alinhar verticalmente
-    st.write("") 
-    if st.button("🔄 NOVA LEITURA"):
-        st.query_params.clear() # Limpa a URL
-        st.rerun() # Recarrega a página limpa
-# -----------------------------------------------
+with col_cam:
+    st.write("") # Espaçamento
+    st.write("")
+    # Botão para ativar/desativar a câmera
+    if st.button("📷", help="Ler QR com a Câmera"):
+        st.session_state.mostrar_camera = not st.session_state.mostrar_camera
+        st.rerun()
 
+with col_reset:
+    st.write("") # Espaçamento
+    st.write("") 
+    if st.button("🔄", help="Limpar / Nova Leitura"):
+        st.query_params.clear()
+        st.session_state.mostrar_camera = False
+        st.rerun()
+
+# Se a câmera estiver ativa, mostra o componente de vídeo
+if st.session_state.mostrar_camera:
+    img_camera = st.camera_input("Aponte para o QR Code")
+    
+    if img_camera:
+        try:
+            # Converter a imagem do Streamlit para formato OpenCV
+            bytes_data = img_camera.getvalue()
+            cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+            
+            # Detectar QR Code
+            detector = cv2.QRCodeDetector()
+            data, bbox, _ = detector.detectAndDecode(cv2_img)
+            
+            if data:
+                st.success(f"QR Code detectado: {data}")
+                # Atualiza a URL e recarrega para preencher o campo de texto
+                st.query_params.codigo = data
+                st.session_state.mostrar_camera = False # Fecha a câmera após ler
+                st.rerun()
+            else:
+                st.warning("Nenhum QR Code identificado na imagem.")
+        except Exception as e:
+            st.error(f"Erro ao processar imagem (Verifique se opencv-python está instalado): {e}")
+
+# --- PROCESSAMENTO DO CÓDIGO ---
 if codigo_busca:
     # Busca dados
     dados = sheet.get_all_values()
@@ -139,7 +178,7 @@ if codigo_busca:
                         st.error(f"Erro ao atualizar localização: {e}")
             
         with col2:
-            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE (FUNCIONAL NO SITE) ---
+            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE ---
             dado_foto_raw = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             link_limpo = limpar_link(dado_foto_raw)
             
@@ -147,20 +186,14 @@ if codigo_busca:
                 with st.spinner("Carregando imagem..."):
                     imagem_bytes = baixar_imagem_drive(link_limpo)
                     if imagem_bytes:
-                        # --- ÁREA DE ROTAÇÃO ---
                         try:
-                            # Abre a imagem usando PIL a partir dos bytes baixados
                             img_pil = Image.open(io.BytesIO(imagem_bytes))
-                            # Rotaciona 90 graus para ficar vertical. 
-                            # Se precisar, mude 90 para 270 ou 180.
                             img_rotated = img_pil.rotate(270, expand=True) 
                             st.image(img_rotated, use_container_width=True)
                         except:
-                             # Se der erro na rotação, mostra a original
                             st.image(imagem_bytes, use_container_width=True)
-                        # -----------------------
                     else:
-                        st.image(link_limpo, use_container_width=True) # Tenta link direto se falhar
+                        st.image(link_limpo, use_container_width=True)
             else:
                 st.info("📸 Item sem foto.")
 
