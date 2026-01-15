@@ -3,4 +3,6 @@ gspread
 pandas
 oauth2client
 google-api-python-client
-pytz
+Pillow
+opencv-python-headless
+numpy
