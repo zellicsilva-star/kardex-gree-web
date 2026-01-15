@@ -3,11 +3,12 @@ import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # Adicionado Download
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload 
 import datetime
 import pytz
 import io
-from PIL import Image # <--- IMPORTAÇÃO NECESSÁRIA PARA ROTACIONAR
+import time # <--- ADICIONADO PARA SUAVIDADE
+from PIL import Image 
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
@@ -121,8 +122,12 @@ if codigo_busca:
                         linha_planilha = item_atual.index[0] + 2
                         coluna_idx = dados[0].index('LOCALIZAÇÃO') + 1
                         sheet.update_cell(linha_planilha, coluna_idx, nova_loc)
-                        st.success("Localização atualizada com sucesso!")
+                        
+                        # --- IMPLEMENTAÇÃO ITEM 1 E 3 (Toast + Suavidade) ---
+                        st.toast("Localização atualizada com sucesso!", icon='📍')
+                        time.sleep(1.5) # Pausa para leitura
                         st.rerun()
+                        # ----------------------------------------------------
                     except Exception as e:
                         st.error(f"Erro ao atualizar localização: {e}")
             
@@ -197,8 +202,12 @@ if codigo_busca:
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
-                    st.success("✅ Movimentação registrada!")
+                    
+                    # --- IMPLEMENTAÇÃO ITEM 1 E 3 (Toast + Suavidade) ---
+                    st.toast("Movimentação registrada com sucesso!", icon='✅')
+                    time.sleep(1.5) # Pausa para leitura antes do refresh
                     st.rerun()
+                    # ----------------------------------------------------
                 else:
                     st.warning("⚠️ Preencha o Responsável.")
 
