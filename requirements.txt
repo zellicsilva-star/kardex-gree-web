@@ -6,3 +6,6 @@ google-api-python-client
 Pillow
 opencv-python-headless
 numpy
+st-gsheets-connection
+selenium
+webdriver-manager
