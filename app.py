@@ -113,9 +113,22 @@ if codigo_busca:
         with col1:
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
-            # --- MODIFICADO: Exibe apenas o saldo padrão, sem alerta de crítico ---
-            st.metric("SALDO ATUAL", item_atual['SALDO ATUAL'].values[0])
-            # ---------------------------------------------------------------------
+            # --- SEÇÃO DE SALDOS ---
+            c_saldo1, c_saldo2 = st.columns(2)
+            with c_saldo1:
+                st.metric("SALDO KARDEX", item_atual['SALDO ATUAL'].values[0])
+            
+            # --- NOVO: SALDO INFOR E ATUALIZAÇÃO ---
+            with c_saldo2:
+                # 'SALDO INFOR' deve ser o nome da Coluna L no cabeçalho da sua planilha
+                # 'ÚLTIMA ATUALIZAÇÃO' deve ser o nome da Coluna M no cabeçalho da sua planilha
+                val_infor = item_atual['SALDO INFOR'].values[0] if 'SALDO INFOR' in item_atual.columns else "N/A"
+                val_data = item_atual['ÚLTIMA ATUALIZAÇÃO'].values[0] if 'ÚLTIMA ATUALIZAÇÃO' in item_atual.columns else "---"
+                
+                st.metric("SALDO INFOR", val_infor, help=f"Sincronizado em: {val_data}")
+            
+            st.caption(f"🕒 **Última sincronização Infor:** {val_data}")
+            # ---------------------------------------
 
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
@@ -203,10 +216,9 @@ if codigo_busca:
         
         # --- EXCLUSÃO DE REGISTRO (NOVO) ---
         with st.expander("🗑️ EXCLUIR MOVIMENTAÇÃO RECENTE (CORREÇÃO)"):
-            # Cria um dicionário para mapear a string legível -> índice original do dataframe
             opcoes_exclusao = {
                 f"{row['DATA']} | {row['TIPO MOV.']} | Qtd: {row['VALOR MOV.']} | Resp: {row['RESPONSÁVEL']}": i 
-                for i, row in item_rows.iloc[::-1].iterrows() # Inverte para mostrar os mais recentes primeiro
+                for i, row in item_rows.iloc[::-1].iterrows() 
             }
             
             if not opcoes_exclusao:
@@ -215,9 +227,6 @@ if codigo_busca:
                 escolha = st.selectbox("Selecione o registro para excluir:", list(opcoes_exclusao.keys()))
                 
                 if st.button("🗑️ Confirmar Exclusão"):
-                    # O índice do DataFrame Pandas começa em 0
-                    # A planilha tem cabeçalho (linha 1)
-                    # Então, Linha na Planilha = Índice do DataFrame + 2
                     index_df = opcoes_exclusao[escolha]
                     linha_para_deletar = index_df + 2
                     
