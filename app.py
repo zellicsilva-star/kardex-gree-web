@@ -98,11 +98,11 @@ codigo_url = query_params.get("codigo", "")
 
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
+# Carregamento global de dados para popular filtros e buscas
+dados = sheet.get_all_values()
+df = pd.DataFrame(dados[1:], columns=dados[0])
+
 if codigo_busca:
-    # Busca dados
-    dados = sheet.get_all_values()
-    df = pd.DataFrame(dados[1:], columns=dados[0])
-    
     df['CÓDIGO'] = df['CÓDIGO'].astype(str).str.strip()
     item_rows = df[df['CÓDIGO'] == codigo_busca]
     
@@ -120,15 +120,12 @@ if codigo_busca:
             
             # --- NOVO: SALDO INFOR E ATUALIZAÇÃO ---
             with c_saldo2:
-                # 'SALDO INFOR' deve ser o nome da Coluna L no cabeçalho da sua planilha
-                # 'ÚLTIMA ATUALIZAÇÃO' deve ser o nome da Coluna M no cabeçalho da sua planilha
                 val_infor = item_atual['SALDO INFOR'].values[0] if 'SALDO INFOR' in item_atual.columns else "N/A"
                 val_data = item_atual['ÚLTIMA ATUALIZAÇÃO'].values[0] if 'ÚLTIMA ATUALIZAÇÃO' in item_atual.columns else "---"
                 
                 st.metric("SALDO INFOR", val_infor, help=f"Sincronizado em: {val_data}")
             
             st.caption(f"🕒 **Última sincronização Infor:** {val_data}")
-            # ---------------------------------------
 
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
@@ -147,7 +144,6 @@ if codigo_busca:
                         st.error(f"Erro ao atualizar localização: {e}")
             
         with col2:
-            # --- VISUALIZAÇÃO ATRAVÉS DO DRIVE ---
             dado_foto_raw = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             link_limpo = limpar_link(dado_foto_raw)
             
@@ -214,7 +210,7 @@ if codigo_busca:
                 else:
                     st.warning("⚠️ Preencha o Responsável.")
         
-        # --- EXCLUSÃO DE REGISTRO (NOVO) ---
+        # --- EXCLUSÃO DE REGISTRO ---
         with st.expander("🗑️ EXCLUIR MOVIMENTAÇÃO RECENTE (CORREÇÃO)"):
             opcoes_exclusao = {
                 f"{row['DATA']} | {row['TIPO MOV.']} | Qtd: {row['VALOR MOV.']} | Resp: {row['RESPONSÁVEL']}": i 
@@ -269,7 +265,17 @@ if codigo_busca:
             st.write("Preencha os dados para incluir este item no banco de dados.")
             
             desc_novo = st.text_input("Descrição do Item").upper()
-            armazem_novo = st.selectbox("Armazém", ["MI03", "MI05", "MP01"])
+            
+            # --- DINÂMICO: Busca opções da coluna ARMAZÉM da planilha ---
+            if 'ARMAZÉM' in df.columns:
+                opcoes_armazem = sorted(df['ARMAZÉM'].unique().tolist())
+                # Remove valores vazios se existirem
+                opcoes_armazem = [opt for opt in opcoes_armazem if opt.strip()]
+            else:
+                opcoes_armazem = ["MI03", "MI05", "MP01"] # Fallback caso a coluna não exista
+                
+            armazem_novo = st.selectbox("Armazém", opcoes_armazem)
+            
             loc_novo = st.text_input("Localização (ex: A-01-01)").upper()
             saldo_inicial = st.number_input("Saldo Inicial", min_value=0.0, step=1.0)
             resp_cad = st.text_input("Responsável pelo Cadastro").upper()
@@ -280,7 +286,6 @@ if codigo_busca:
                         agora = datetime.datetime.now(FUSO_HORARIO)
                         dt_cad = agora.strftime("%d/%m/%Y %H:%M")
                         
-                        # Linha seguindo o padrão das suas colunas (Coluna Foto fica vazia)
                         nova_linha_cad = [
                             dt_cad,
                             f"'{codigo_busca}",
@@ -292,7 +297,7 @@ if codigo_busca:
                             resp_cad,
                             armazem_novo,
                             loc_novo,
-                            "" # Coluna FOTO vazia
+                            "" 
                         ]
                         
                         sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
