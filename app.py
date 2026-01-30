@@ -264,4 +264,48 @@ if codigo_busca:
             use_container_width=True
         )
     else:
-        st.error("Código não encontrado.")
+        st.warning(f"⚠️ O código **{codigo_busca}** não foi encontrado no sistema.")
+        with st.expander("🆕 CADASTRAR NOVO ITEM"):
+            st.write("Preencha os dados para incluir este item no banco de dados.")
+            
+            desc_novo = st.text_input("Descrição do Item").upper()
+            armazem_novo = st.selectbox("Armazém", ["MI03", "MI05", "MP01"])
+            loc_novo = st.text_input("Localização (ex: A-01-01)").upper()
+            saldo_inicial = st.number_input("Saldo Inicial", min_value=0.0, step=1.0)
+            resp_cad = st.text_input("Responsável pelo Cadastro").upper()
+            foto_nova = st.file_uploader("Tirar Foto do Item", type=['png', 'jpg', 'jpeg'])
+            
+            if st.button("Salvar Novo Item"):
+                if desc_novo and resp_cad:
+                    try:
+                        link_foto = ""
+                        if foto_nova:
+                            with st.spinner("Subindo foto..."):
+                                link_foto = upload_foto(foto_nova, codigo_busca)
+                        
+                        agora = datetime.datetime.now(FUSO_HORARIO)
+                        dt_cad = agora.strftime("%d/%m/%Y %H:%M")
+                        
+                        # Linha seguindo o padrão das suas colunas
+                        nova_linha_cad = [
+                            dt_cad,
+                            f"'{codigo_busca}",
+                            desc_novo,
+                            str(saldo_inicial).replace('.', ','),
+                            "ENTRADA", # Cadastro inicial conta como entrada
+                            str(saldo_inicial).replace('.', ','),
+                            "CADASTRO INICIAL",
+                            resp_cad,
+                            armazem_novo,
+                            loc_novo,
+                            link_foto
+                        ]
+                        
+                        sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
+                        st.success("Item cadastrado com sucesso!")
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao cadastrar: {e}")
+                else:
+                    st.error("Por favor, preencha a Descrição e o Responsável.")
