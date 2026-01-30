@@ -59,7 +59,7 @@ def upload_foto(arquivo, codigo):
         st.error(f"Erro no Upload (Drive): {e}")
         return None
 
-# --- NOVA FUNÇÃO: BAIXAR IMAGEM (Para funcionar no Site/GitHub) ---
+# --- NOVA FUNÇÃO: BAIXAR IMAGEM ---
 def baixar_imagem_drive(link_planilha):
     if not link_planilha: return None
     try:
@@ -98,7 +98,7 @@ codigo_url = query_params.get("codigo", "")
 
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
-# Carregamento global de dados para popular filtros e buscas
+# Carregamento global de dados
 dados = sheet.get_all_values()
 df = pd.DataFrame(dados[1:], columns=dados[0])
 
@@ -113,20 +113,16 @@ if codigo_busca:
         with col1:
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
             
-            # --- SEÇÃO DE SALDOS ---
             c_saldo1, c_saldo2 = st.columns(2)
             with c_saldo1:
                 st.metric("SALDO KARDEX", item_atual['SALDO ATUAL'].values[0])
             
-            # --- NOVO: SALDO INFOR E ATUALIZAÇÃO ---
             with c_saldo2:
                 val_infor = item_atual['SALDO INFOR'].values[0] if 'SALDO INFOR' in item_atual.columns else "N/A"
                 val_data = item_atual['ÚLTIMA ATUALIZAÇÃO'].values[0] if 'ÚLTIMA ATUALIZAÇÃO' in item_atual.columns else "---"
-                
                 st.metric("SALDO INFOR", val_infor, help=f"Sincronizado em: {val_data}")
             
             st.caption(f"🕒 **Última sincronização Infor:** {val_data}")
-
             st.write(f"**Localização:** {item_atual['LOCALIZAÇÃO'].values[0]}")
             
             with st.expander("✏️ Editar Localização"):
@@ -136,7 +132,6 @@ if codigo_busca:
                         linha_planilha = item_atual.index[0] + 2
                         coluna_idx = dados[0].index('LOCALIZAÇÃO') + 1
                         sheet.update_cell(linha_planilha, coluna_idx, nova_loc)
-                        
                         st.toast("Localização atualizada com sucesso!", icon='📍')
                         time.sleep(1.5) 
                         st.rerun()
@@ -146,7 +141,6 @@ if codigo_busca:
         with col2:
             dado_foto_raw = item_atual['FOTO'].values[0] if 'FOTO' in item_atual.columns else None
             link_limpo = limpar_link(dado_foto_raw)
-            
             if link_limpo and len(link_limpo) > 10:
                 with st.spinner("Carregando imagem..."):
                     imagem_bytes = baixar_imagem_drive(link_limpo)
@@ -169,6 +163,7 @@ if codigo_busca:
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
             qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
             doc = st.text_input("REQUISIÇÃO/NF").upper()
+            obs = st.text_input("OBSERVAÇÃO").upper()  # Nova Coluna N
             resp = st.text_input("RESPONSÁVEL").upper()
             
             if st.button("Confirmar Lançamento"):
@@ -177,17 +172,17 @@ if codigo_busca:
                         saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
                     except:
                         saldo_ant = 0.0
-                        
+                    
                     if tipo == "ENTRADA": novo_saldo = saldo_ant + qtd
                     elif tipo == "SAÍDA": novo_saldo = saldo_ant - qtd
                     else: novo_saldo = qtd 
                     
                     link_foto_final = link_limpo
                     valor_foto_planilha = link_foto_final if link_foto_final else ""
-
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_planilha = agora.strftime("%d/%m/%Y %H:%M")
                     
+                    # Coluna N é a 14ª coluna
                     nova_linha = [
                         dt_planilha, 
                         f"'{codigo_busca}", 
@@ -199,36 +194,34 @@ if codigo_busca:
                         resp, 
                         item_atual['ARMAZÉM'].values[0], 
                         item_atual['LOCALIZAÇÃO'].values[0],
-                        valor_foto_planilha
+                        valor_foto_planilha,
+                        "", # Coluna L (Saldo Infor - Mantido vazio no log)
+                        "", # Coluna M (Ult. Atualiz - Mantido vazio no log)
+                        obs # Coluna N (OBSERVAÇÃO)
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
-                    
                     st.toast("Movimentação registrada com sucesso!", icon='✅')
                     time.sleep(1.5) 
                     st.rerun()
                 else:
                     st.warning("⚠️ Preencha o Responsável.")
         
-        # --- EXCLUSÃO DE REGISTRO ---
         with st.expander("🗑️ EXCLUIR MOVIMENTAÇÃO RECENTE (CORREÇÃO)"):
             opcoes_exclusao = {
                 f"{row['DATA']} | {row['TIPO MOV.']} | Qtd: {row['VALOR MOV.']} | Resp: {row['RESPONSÁVEL']}": i 
                 for i, row in item_rows.iloc[::-1].iterrows() 
             }
-            
             if not opcoes_exclusao:
                 st.info("Não há registros para excluir deste item.")
             else:
                 escolha = st.selectbox("Selecione o registro para excluir:", list(opcoes_exclusao.keys()))
-                
                 if st.button("🗑️ Confirmar Exclusão"):
                     index_df = opcoes_exclusao[escolha]
                     linha_para_deletar = index_df + 2
-                    
                     try:
                         sheet.delete_rows(linha_para_deletar)
-                        st.toast(f"Registro excluído da linha {linha_para_deletar}!", icon='🗑️')
+                        st.toast(f"Registro excluído!", icon='🗑️')
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
@@ -238,7 +231,8 @@ if codigo_busca:
         st.subheader("📜 Histórico Recente")
         hist = item_rows.tail(5).iloc[::-1].copy()
         
-        cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'RESPONSÁVEL']
+        # Inserido 'OBSERVAÇÃO' ao lado de 'REQUISIÇÃO'
+        cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'OBSERVAÇÃO', 'RESPONSÁVEL']
         cols_finais = [c for c in cols_desejadas if c in hist.columns]
         
         if 'DATA' in hist.columns:
@@ -260,24 +254,19 @@ if codigo_busca:
             use_container_width=True
         )
     else:
-        st.warning(f"⚠️ O código **{codigo_busca}** não foi encontrado no sistema.")
+        st.warning(f"⚠️ O código **{codigo_busca}** não foi encontrado.")
         with st.expander("🆕 CADASTRAR NOVO ITEM"):
             st.write("Preencha os dados para incluir este item no banco de dados.")
-            
             desc_novo = st.text_input("Descrição do Item").upper()
-            
-            # --- DINÂMICO: Busca opções da coluna ARMAZÉM da planilha ---
             if 'ARMAZÉM' in df.columns:
                 opcoes_armazem = sorted(df['ARMAZÉM'].unique().tolist())
-                # Remove valores vazios se existirem
                 opcoes_armazem = [opt for opt in opcoes_armazem if opt.strip()]
             else:
-                opcoes_armazem = ["MI03", "MI05", "MP01"] # Fallback caso a coluna não exista
-                
+                opcoes_armazem = ["MI03", "MI05", "MP01"]
             armazem_novo = st.selectbox("Armazém", opcoes_armazem)
-            
             loc_novo = st.text_input("Localização (ex: A-01-01)").upper()
             saldo_inicial = st.number_input("Saldo Inicial", min_value=0.0, step=1.0)
+            obs_novo = st.text_input("Observação Inicial").upper()
             resp_cad = st.text_input("Responsável pelo Cadastro").upper()
             
             if st.button("Salvar Novo Item"):
@@ -285,21 +274,12 @@ if codigo_busca:
                     try:
                         agora = datetime.datetime.now(FUSO_HORARIO)
                         dt_cad = agora.strftime("%d/%m/%Y %H:%M")
-                        
                         nova_linha_cad = [
-                            dt_cad,
-                            f"'{codigo_busca}",
-                            desc_novo,
-                            str(saldo_inicial).replace('.', ','),
-                            "ENTRADA", 
-                            str(saldo_inicial).replace('.', ','),
-                            "CADASTRO INICIAL",
-                            resp_cad,
-                            armazem_novo,
-                            loc_novo,
-                            "" 
+                            dt_cad, f"'{codigo_busca}", desc_novo,
+                            str(saldo_inicial).replace('.', ','), "ENTRADA", 
+                            str(saldo_inicial).replace('.', ','), "CADASTRO INICIAL",
+                            resp_cad, armazem_novo, loc_novo, "", "", "", obs_novo
                         ]
-                        
                         sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
                         st.success("Item cadastrado com sucesso!")
                         time.sleep(2)
@@ -307,4 +287,4 @@ if codigo_busca:
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
                 else:
-                    st.error("Por favor, preencha a Descrição e o Responsável.")
+                    st.error("Preencha a Descrição e o Responsável.")
