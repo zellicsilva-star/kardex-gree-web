@@ -273,32 +273,26 @@ if codigo_busca:
             loc_novo = st.text_input("Localização (ex: A-01-01)").upper()
             saldo_inicial = st.number_input("Saldo Inicial", min_value=0.0, step=1.0)
             resp_cad = st.text_input("Responsável pelo Cadastro").upper()
-            foto_nova = st.file_uploader("Tirar Foto do Item", type=['png', 'jpg', 'jpeg'])
             
             if st.button("Salvar Novo Item"):
                 if desc_novo and resp_cad:
                     try:
-                        link_foto = ""
-                        if foto_nova:
-                            with st.spinner("Subindo foto..."):
-                                link_foto = upload_foto(foto_nova, codigo_busca)
-                        
                         agora = datetime.datetime.now(FUSO_HORARIO)
                         dt_cad = agora.strftime("%d/%m/%Y %H:%M")
                         
-                        # Linha seguindo o padrão das suas colunas
+                        # Linha seguindo o padrão das suas colunas (Coluna Foto fica vazia)
                         nova_linha_cad = [
                             dt_cad,
                             f"'{codigo_busca}",
                             desc_novo,
                             str(saldo_inicial).replace('.', ','),
-                            "ENTRADA", # Cadastro inicial conta como entrada
+                            "ENTRADA", 
                             str(saldo_inicial).replace('.', ','),
                             "CADASTRO INICIAL",
                             resp_cad,
                             armazem_novo,
                             loc_novo,
-                            link_foto
+                            "" # Coluna FOTO vazia
                         ]
                         
                         sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
