@@ -22,6 +22,15 @@ st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wid
 @st.cache_resource
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
+    # Verificação de Segurança para os Secrets
+    if "gcp_service_account" not in st.secrets:
+        st.error("Erro: Credenciais do Google não encontradas nos Secrets.")
+        st.stop()
+    if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
+        st.error("Erro: Credenciais do Supabase não encontradas nos Secrets do Streamlit.")
+        st.stop()
+
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     
@@ -29,7 +38,7 @@ def conectar():
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive = build('drive', 'v3', credentials=creds)
     
-    # Conexão Supabase
+    # Conexão Supabase (Usando a URL e a Anon Key correta)
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(url, key)
@@ -39,17 +48,18 @@ def conectar():
 try:
     sheet, drive_service, supabase = conectar()
 except Exception as e:
-    st.error(f"Erro de Conexão: {e}")
+    st.error(f"Erro Crítico de Conexão: {e}")
     st.stop()
 
 # --- FUNÇÃO DE LOG SUPABASE ---
 def log_supabase(dados):
     try:
+        # Tabela: KardexDigital (Certifique-se que as colunas no Supabase estão em minúsculo)
         supabase.table("KardexDigital").insert(dados).execute()
     except Exception as e:
-        st.warning(f"Aviso: Salvo no Sheets, mas erro no Supabase: {e}")
+        st.warning(f"⚠️ Aviso: Salvo no Sheets, mas erro no Supabase: {e}")
 
-# --- FUNÇÕES DE DRIVE/FOTOS ---
+# --- FUNÇÕES AUXILIARES (DRIVE E FOTOS) ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
@@ -81,14 +91,14 @@ def limpar_link(valor):
     if v.startswith('=IMAGE("'): return v[8:-2]
     return v
 
-# --- INTERFACE PRINCIPAL ---
-st.title("📦 GREE - Kardex Digital (Google + Supabase)")
+# --- INTERFACE ---
+st.title("📦 GREE - Kardex Digital (Híbrido: Google + Supabase)")
 
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
-# Carregamento de dados (Sheets ainda é a fonte de consulta principal)
+# Carregamento de dados do Google Sheets
 dados_raw = sheet.get_all_values()
 df = pd.DataFrame(dados_raw[1:], columns=dados_raw[0])
 
@@ -99,7 +109,6 @@ if codigo_busca:
     if not item_rows.empty:
         item_atual = item_rows.tail(1)
         
-        # --- EXIBIÇÃO ---
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"##### DESCRIÇÃO: {item_atual['DESCRIÇÃO'].values[0]}")
@@ -116,11 +125,10 @@ if codigo_busca:
             if link_foto and len(link_foto) > 10:
                 img_bytes = baixar_imagem_drive(link_foto)
                 if img_bytes: st.image(img_bytes, use_container_width=True)
-            else: st.info("📸 Sem foto.")
+            else: st.info("📸 Sem foto disponível.")
 
         st.divider()
 
-        # --- LANÇAMENTO ---
         with st.expander("📝 REGISTRAR MOVIMENTAÇÃO"):
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
             qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
@@ -138,18 +146,18 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
 
-                    # Log no Sheets
+                    # 1. Salvar no Google Sheets
                     nova_linha = [dt_fmt, f"'{codigo_busca}", item_atual['DESCRIÇÃO'].values[0], str(qtd).replace('.', ','), tipo, str(round(novo_saldo, 2)).replace('.', ','), doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0], "", "", "", obs]
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
 
-                    # Log no Supabase
+                    # 2. Salvar no Supabase
                     log_supabase({
                         "data": dt_fmt, "codigo": str(codigo_busca), "descricao": item_atual['DESCRIÇÃO'].values[0],
                         "quantidade": float(qtd), "tipo_mov": tipo, "saldo": float(novo_saldo),
                         "documento": doc, "responsavel": resp, "armazem": item_atual['ARMAZÉM'].values[0],
                         "localizacao": item_atual['LOCALIZAÇÃO'].values[0], "observacao": obs
                     })
-                    st.success("Lançamento concluído!")
+                    st.success("Lançamento concluído com sucesso!")
                     time.sleep(1)
                     st.rerun()
 
@@ -178,6 +186,6 @@ if codigo_busca:
                         "documento": "CADASTRO", "responsavel": resp_cad, "armazem": armazem_novo,
                         "localizacao": loc_novo, "observacao": "CADASTRO INICIAL"
                     })
-                    st.success("Item cadastrado nos dois sistemas!")
+                    st.success("Novo item cadastrado com sucesso!")
                     time.sleep(1.5)
                     st.rerun()
