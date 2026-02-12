@@ -9,6 +9,7 @@ import pytz
 import io
 import time 
 from PIL import Image 
+from supabase import create_client # ADICIONADO
 
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
@@ -33,13 +34,25 @@ def conectar():
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive = build('drive', 'v3', credentials=creds)
     
-    return planilha, drive
+    # --- CONEXÃO SUPABASE (ADICIONADO) ---
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(url, key)
+    
+    return planilha, drive, supabase # Retornando supabase também
 
 try:
-    sheet, drive_service = conectar()
+    sheet, drive_service, supabase = conectar() # Recebendo supabase
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
+
+# --- FUNÇÃO DE LOG SUPABASE (ADICIONADO) ---
+def log_supabase(dados):
+    try:
+        supabase.table("movimentacoes_bunker").insert(dados).execute()
+    except Exception as e:
+        st.warning(f"Aviso: Salvo no Sheets, mas erro no Supabase: {e}")
 
 # --- FUNÇÃO DE UPLOAD ---
 def upload_foto(arquivo, codigo):
@@ -201,6 +214,22 @@ if codigo_busca:
                     ]
                     
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
+                    
+                    # --- LOG SUPABASE (ADICIONADO) ---
+                    log_supabase({
+                        "data_mov": dt_planilha,
+                        "codigo": str(codigo_busca),
+                        "descricao": item_atual['DESCRIÇÃO'].values[0],
+                        "quantidade": float(qtd),
+                        "tipo_mov": tipo,
+                        "saldo": float(novo_saldo),
+                        "documento": doc,
+                        "responsavel": resp,
+                        "armazem": item_atual['ARMAZÉM'].values[0],
+                        "localizacao": item_atual['LOCALIZAÇÃO'].values[0],
+                        "observacao": obs
+                    })
+
                     st.toast("Movimentação registrada com sucesso!", icon='✅')
                     time.sleep(1.5) 
                     st.rerun()
@@ -281,6 +310,22 @@ if codigo_busca:
                             resp_cad, armazem_novo, loc_novo, "", "", "", obs_novo
                         ]
                         sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
+                        
+                        # --- LOG SUPABASE (ADICIONADO NO CADASTRO) ---
+                        log_supabase({
+                            "data_mov": dt_cad,
+                            "codigo": str(codigo_busca),
+                            "descricao": desc_novo,
+                            "quantidade": float(saldo_inicial),
+                            "tipo_mov": "ENTRADA",
+                            "saldo": float(saldo_inicial),
+                            "documento": "CADASTRO INICIAL",
+                            "responsavel": resp_cad,
+                            "armazem": armazem_novo,
+                            "localizacao": loc_novo,
+                            "observacao": obs_novo
+                        })
+
                         st.success("Item cadastrado com sucesso!")
                         time.sleep(2)
                         st.rerun()
