@@ -23,12 +23,12 @@ st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wid
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Validação rigorosa dos Secrets para evitar travamentos
+    # Validação de Secrets
     if "gcp_service_account" not in st.secrets:
-        st.error("Erro: Credenciais 'gcp_service_account' não encontradas.")
+        st.error("Erro: Credenciais do Google não encontradas.")
         st.stop()
     if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
-        st.error("Erro: Credenciais do Supabase ('SUPABASE_URL' ou 'SUPABASE_KEY') ausentes nos Secrets.")
+        st.error("Erro: Credenciais do Supabase ausentes nos Secrets.")
         st.stop()
 
     creds_dict = st.secrets["gcp_service_account"]
@@ -54,10 +54,9 @@ except Exception as e:
 # --- FUNÇÃO DE LOG SUPABASE ---
 def log_supabase(dados):
     try:
-        # A tabela deve se chamar KardexDigital e as colunas devem ser minúsculas
-        supabase.table("KardexDigital").insert(dados).execute()
+        # NOME DA TABELA ATUALIZADO PARA: movimentacoes_bunker
+        supabase.table("movimentacoes_bunker").insert(dados).execute()
     except Exception as e:
-        # Se falhar no Supabase, avisamos, mas não impedimos o uso do Sheets
         st.warning(f"⚠️ Nota: Salvo no Sheets, mas erro no banco Supabase: {e}")
 
 # --- FUNÇÕES DE DRIVE E IMAGEM ---
@@ -92,14 +91,14 @@ def limpar_link(valor):
     if v.startswith('=IMAGE("'): return v[8:-2]
     return v
 
-# --- INTERFACE PRINCIPAL ---
+# --- INTERFACE ---
 st.title("📦 GREE - Kardex Digital (Híbrido)")
 
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
-# Carregamento de dados (Sheets como fonte de busca atual)
+# Carregamento de dados (Sheets)
 dados_raw = sheet.get_all_values()
 df = pd.DataFrame(dados_raw[1:], columns=dados_raw[0])
 
@@ -130,7 +129,6 @@ if codigo_busca:
 
         st.divider()
 
-        # --- REGISTRO DE MOVIMENTAÇÃO ---
         with st.expander("📝 REGISTRAR MOVIMENTAÇÃO"):
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
             qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
@@ -148,21 +146,21 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
 
-                    # 1. Salvar no Google Sheets
+                    # Salvar no Google Sheets
                     nova_linha = [dt_fmt, f"'{codigo_busca}", item_atual['DESCRIÇÃO'].values[0], 
                                   str(qtd).replace('.', ','), tipo, str(round(novo_saldo, 2)).replace('.', ','), 
                                   doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0], 
                                   "", "", "", obs]
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
 
-                    # 2. Salvar no Supabase
+                    # Salvar no Supabase
                     log_supabase({
                         "data": dt_fmt, "codigo": str(codigo_busca), "descricao": item_atual['DESCRIÇÃO'].values[0],
                         "quantidade": float(qtd), "tipo_mov": tipo, "saldo": float(novo_saldo),
                         "documento": doc, "responsavel": resp, "armazem": item_atual['ARMAZÉM'].values[0],
                         "localizacao": item_atual['LOCALIZAÇÃO'].values[0], "observacao": obs
                     })
-                    st.success("Lançamento concluído com sucesso!")
+                    st.success("Lançamento concluído!")
                     time.sleep(1)
                     st.rerun()
 
@@ -180,19 +178,19 @@ if codigo_busca:
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
                     
-                    # Salva no Sheets
+                    # Sheets
                     nova_linha_cad = [dt_fmt, f"'{codigo_busca}", desc_novo, str(saldo_ini).replace('.', ','), 
                                       "ENTRADA", str(saldo_ini).replace('.', ','), "CADASTRO INICIAL", 
                                       resp_cad, armazem_novo, loc_novo, "", "", "", "NOVO CADASTRO"]
                     sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
                     
-                    # Salva no Supabase
+                    # Supabase
                     log_supabase({
                         "data": dt_fmt, "codigo": str(codigo_busca), "descricao": desc_novo,
                         "quantidade": float(saldo_ini), "tipo_mov": "ENTRADA", "saldo": float(saldo_ini),
                         "documento": "CADASTRO", "responsavel": resp_cad, "armazem": armazem_novo,
                         "localizacao": loc_novo, "observacao": "CADASTRO INICIAL"
                     })
-                    st.success("Novo item cadastrado com sucesso!")
+                    st.success("Item cadastrado!")
                     time.sleep(1.5)
                     st.rerun()
