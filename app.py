@@ -23,12 +23,12 @@ st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wid
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Validação de segurança para os Secrets no Advanced Settings
+    # Validação de segurança para os Secrets
     if "gcp_service_account" not in st.secrets:
-        st.error("Erro: Credenciais do Google não encontradas nos Secrets.")
+        st.error("Erro: Credenciais do Google não encontradas.")
         st.stop()
-    if "SUPABASE_URL" not in st.secrets:
-        st.error("Erro: SUPABASE_URL não configurada no Advanced Settings > Secrets.")
+    if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
+        st.error("Erro: Credenciais do Supabase ausentes nos Secrets.")
         st.stop()
 
     creds_dict = st.secrets["gcp_service_account"]
@@ -48,13 +48,13 @@ def conectar():
 try:
     sheet, drive_service, supabase = conectar()
 except Exception as e:
-    st.error(f"Erro de Conexão: {e}")
+    st.error(f"Erro Crítico de Conexão: {e}")
     st.stop()
 
 # --- FUNÇÃO DE LOG SUPABASE ---
 def log_supabase(dados):
     try:
-        # Nome da tabela atualizado conforme seu print: Kardex_Online
+        # Nome da tabela conforme seu banco: Kardex_Online
         supabase.table("Kardex_Online").insert(dados).execute()
     except Exception as e:
         st.warning(f"⚠️ Aviso: Salvo no Sheets, mas erro no Supabase: {e}")
@@ -110,7 +110,7 @@ if codigo_busca:
                 if img_bytes:
                     img_pil = Image.open(io.BytesIO(img_bytes))
                     st.image(img_pil.rotate(270, expand=True), use_container_width=True)
-            else: st.info("📸 Sem foto.")
+            else: st.info("📸 Sem foto cadastrada.")
 
         st.divider()
 
@@ -123,22 +123,25 @@ if codigo_busca:
             
             if st.button("Confirmar Lançamento"):
                 if resp:
-                    try: saldo_ant = float(item_atual['SALDO ATUAL'].values[0].replace(',', '.'))
-                    except: saldo_ant = 0.0
+                    try: 
+                        saldo_txt = str(item_atual['SALDO ATUAL'].values[0]).replace(',', '.')
+                        saldo_ant = float(saldo_txt)
+                    except: 
+                        saldo_ant = 0.0
                     
                     novo_saldo = (saldo_ant + qtd) if tipo == "ENTRADA" else (saldo_ant - qtd) if tipo == "SAÍDA" else qtd
                     agora = datetime.datetime.now(FUSO_HORARIO)
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
 
-                    # 1. SALVAR NO GOOGLE SHEETS (Mantendo os nomes originais da planilha)
+                    # 1. SALVAR NO GOOGLE SHEETS
                     nova_linha = [dt_fmt, f"'{codigo_busca}", item_atual['DESCRIÇÃO'].values[0], str(qtd).replace('.', ','), tipo, str(round(novo_saldo, 2)).replace('.', ','), doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0], "", "", "", obs]
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
                     
-                    # 2. SALVAR NO SUPABASE (Mapeando para os nomes da sua tabela image_6b0757.png)
+                    # 2. SALVAR NO SUPABASE
                     log_supabase({
                         "data_mov": dt_fmt,
                         "codigo": str(codigo_busca),
-                        "descriciao": item_atual['DESCRIÇÃO'].values[0], # "DESCRIÇÃO" do Sheets vira "descriciao" no Supabase
+                        "descriciao": item_atual['DESCRIÇÃO'].values[0],
                         "quantidade": float(qtd),
                         "tipo_mov": tipo,
                         "saldo": float(novo_saldo),
@@ -146,7 +149,9 @@ if codigo_busca:
                         "responsavel": resp,
                         "observacao": obs
                     })
-                    st.success("Lançamento concluído!"); time.sleep(1.5); st.rerun()
+                    st.success("Lançamento concluído com sucesso!"); time.sleep(1); st.rerun()
+                else:
+                    st.warning("⚠️ Por favor, preencha o campo RESPONSÁVEL.")
 
     else:
         st.warning(f"⚠️ Código {codigo_busca} não encontrado.")
