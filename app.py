@@ -252,9 +252,21 @@ if codigo_busca:
                 if st.button("🗑️ Confirmar Exclusão"):
                     index_df = opcoes_exclusao[escolha]
                     linha_para_deletar = index_df + 2
+                    
+                    # Pegamos os dados do registro que será excluído para identificar no Supabase
+                    registro_selecionado = item_rows.loc[index_df]
+                    data_ref = registro_selecionado['DATA']
+                    codigo_ref = registro_selecionado['CÓDIGO']
+
                     try:
+                        # 1. EXCLUIR NO GOOGLE SHEETS
                         sheet.delete_rows(linha_para_deletar)
-                        st.toast(f"Registro excluído!", icon='🗑️')
+                        
+                        # 2. EXCLUIR NO SUPABASE
+                        # Filtramos pela data e código para garantir que exclua o item certo
+                        supabase.table("Kardex_Online").delete().eq("data_mov", data_ref).eq("codigo", codigo_ref).execute()
+
+                        st.toast(f"Registro excluído de ambos os bancos!", icon='🗑️')
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
