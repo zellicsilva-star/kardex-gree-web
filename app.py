@@ -11,6 +11,10 @@ import time
 from PIL import Image 
 from supabase import create_client
 
+if "SUPABASE_URL" not in st.secrets:
+    st.error("⚠️ O sistema de segredos do Streamlit não carregou as chaves. Verifique o painel Settings > Secrets.")
+    st.stop()
+
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
