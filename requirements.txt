@@ -9,3 +9,4 @@ numpy
 st-gsheets-connection
 selenium
 webdriver-manager
+supabase
