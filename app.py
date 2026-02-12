@@ -23,12 +23,12 @@ st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wid
 def conectar():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Verificação de Segurança para os Secrets
+    # Validação rigorosa dos Secrets para evitar travamentos
     if "gcp_service_account" not in st.secrets:
-        st.error("Erro: Credenciais do Google não encontradas nos Secrets.")
+        st.error("Erro: Credenciais 'gcp_service_account' não encontradas.")
         st.stop()
     if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
-        st.error("Erro: Credenciais do Supabase não encontradas nos Secrets do Streamlit.")
+        st.error("Erro: Credenciais do Supabase ('SUPABASE_URL' ou 'SUPABASE_KEY') ausentes nos Secrets.")
         st.stop()
 
     creds_dict = st.secrets["gcp_service_account"]
@@ -38,7 +38,7 @@ def conectar():
     planilha = client.open_by_key(ID_PLANILHA).sheet1
     drive = build('drive', 'v3', credentials=creds)
     
-    # Conexão Supabase (Usando a URL e a Anon Key correta)
+    # Conexão Supabase
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(url, key)
@@ -54,12 +54,13 @@ except Exception as e:
 # --- FUNÇÃO DE LOG SUPABASE ---
 def log_supabase(dados):
     try:
-        # Tabela: KardexDigital (Certifique-se que as colunas no Supabase estão em minúsculo)
+        # A tabela deve se chamar KardexDigital e as colunas devem ser minúsculas
         supabase.table("KardexDigital").insert(dados).execute()
     except Exception as e:
-        st.warning(f"⚠️ Aviso: Salvo no Sheets, mas erro no Supabase: {e}")
+        # Se falhar no Supabase, avisamos, mas não impedimos o uso do Sheets
+        st.warning(f"⚠️ Nota: Salvo no Sheets, mas erro no banco Supabase: {e}")
 
-# --- FUNÇÕES AUXILIARES (DRIVE E FOTOS) ---
+# --- FUNÇÕES DE DRIVE E IMAGEM ---
 def upload_foto(arquivo, codigo):
     try:
         file_metadata = {'name': f"foto_{codigo}.png", 'parents': [ID_PASTA_FOTOS]}
@@ -91,14 +92,14 @@ def limpar_link(valor):
     if v.startswith('=IMAGE("'): return v[8:-2]
     return v
 
-# --- INTERFACE ---
-st.title("📦 GREE - Kardex Digital (Híbrido: Google + Supabase)")
+# --- INTERFACE PRINCIPAL ---
+st.title("📦 GREE - Kardex Digital (Híbrido)")
 
 query_params = st.query_params
 codigo_url = query_params.get("codigo", "")
 codigo_busca = st.text_input("ESCANEIE OU DIGITE O CÓDIGO:", value=codigo_url).upper().strip()
 
-# Carregamento de dados do Google Sheets
+# Carregamento de dados (Sheets como fonte de busca atual)
 dados_raw = sheet.get_all_values()
 df = pd.DataFrame(dados_raw[1:], columns=dados_raw[0])
 
@@ -125,10 +126,11 @@ if codigo_busca:
             if link_foto and len(link_foto) > 10:
                 img_bytes = baixar_imagem_drive(link_foto)
                 if img_bytes: st.image(img_bytes, use_container_width=True)
-            else: st.info("📸 Sem foto disponível.")
+            else: st.info("📸 Sem foto cadastrada.")
 
         st.divider()
 
+        # --- REGISTRO DE MOVIMENTAÇÃO ---
         with st.expander("📝 REGISTRAR MOVIMENTAÇÃO"):
             tipo = st.selectbox("Operação", ["SAÍDA", "ENTRADA", "INVENTÁRIO"])
             qtd = st.number_input("Quantidade", min_value=0.0, step=1.0)
@@ -147,7 +149,10 @@ if codigo_busca:
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
 
                     # 1. Salvar no Google Sheets
-                    nova_linha = [dt_fmt, f"'{codigo_busca}", item_atual['DESCRIÇÃO'].values[0], str(qtd).replace('.', ','), tipo, str(round(novo_saldo, 2)).replace('.', ','), doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0], "", "", "", obs]
+                    nova_linha = [dt_fmt, f"'{codigo_busca}", item_atual['DESCRIÇÃO'].values[0], 
+                                  str(qtd).replace('.', ','), tipo, str(round(novo_saldo, 2)).replace('.', ','), 
+                                  doc, resp, item_atual['ARMAZÉM'].values[0], item_atual['LOCALIZAÇÃO'].values[0], 
+                                  "", "", "", obs]
                     sheet.append_row(nova_linha, value_input_option='USER_ENTERED')
 
                     # 2. Salvar no Supabase
@@ -176,7 +181,9 @@ if codigo_busca:
                     dt_fmt = agora.strftime("%d/%m/%Y %H:%M")
                     
                     # Salva no Sheets
-                    nova_linha_cad = [dt_fmt, f"'{codigo_busca}", desc_novo, str(saldo_ini).replace('.', ','), "ENTRADA", str(saldo_ini).replace('.', ','), "CADASTRO INICIAL", resp_cad, armazem_novo, loc_novo, "", "", "", "NOVO CADASTRO"]
+                    nova_linha_cad = [dt_fmt, f"'{codigo_busca}", desc_novo, str(saldo_ini).replace('.', ','), 
+                                      "ENTRADA", str(saldo_ini).replace('.', ','), "CADASTRO INICIAL", 
+                                      resp_cad, armazem_novo, loc_novo, "", "", "", "NOVO CADASTRO"]
                     sheet.append_row(nova_linha_cad, value_input_option='USER_ENTERED')
                     
                     # Salva no Supabase
