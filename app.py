@@ -225,7 +225,7 @@ if codigo_busca:
                     log_supabase({
                         "data_mov": dt_planilha,
                         "codigo": str(codigo_busca),
-                        "descriciao": item_atual['DESCRIÇÃO'].values[0], # "descriciao" conforme seu banco
+                        "descricao": item_atual['DESCRIÇÃO'].values[0], # "descricao" conforme seu banco
                         "quantidade": float(qtd),
                         "tipo_mov": tipo,
                         "saldo": float(novo_saldo),
@@ -319,7 +319,7 @@ if codigo_busca:
                         log_supabase({
                             "data_mov": dt_cad,
                             "codigo": str(codigo_busca),
-                            "descriciao": desc_novo,
+                            "descricao": desc_novo,
                             "quantidade": float(saldo_inicial),
                             "tipo_mov": "ENTRADA",
                             "saldo": float(saldo_inicial),
