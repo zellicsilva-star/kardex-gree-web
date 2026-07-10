@@ -274,7 +274,7 @@ if codigo_busca:
 
         # --- HISTÓRICO ---
         st.subheader("📜 Histórico Recente")
-        hist = item_rows.tail(5).iloc[::-1].copy()
+        hist = item_rows.iloc[::-1].copy()
         
         # Inserido 'OBSERVAÇÃO' ao lado de 'REQUISIÇÃO'
         cols_desejadas = ['DATA', 'VALOR MOV.', 'TIPO MOV.', 'SALDO ATUAL', 'REQUISIÇÃO', 'OBSERVAÇÃO', 'RESPONSÁVEL']
