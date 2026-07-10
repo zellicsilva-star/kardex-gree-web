@@ -1,7 +1,11 @@
+import base64
 import datetime
 import io
+import json
 import mimetypes
 import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import gspread
 import pandas as pd
@@ -17,6 +21,7 @@ from supabase import create_client
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
+URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbz3dVZr1c_obZ4PKlzwww4nMB0Y44-K9QhhY42TrgoNh7v7A6eOffMnKLUXURjobTy9dA/exec"
 FUSO_HORARIO = pytz.timezone("America/Manaus")
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
@@ -104,27 +109,41 @@ def baixar_imagem_drive(valor_foto):
 
 
 def upload_foto(arquivo, codigo):
-    """Envia uma foto para a pasta do Drive e retorna somente o ID do arquivo."""
+    """Envia a foto ao Apps Script e recebe o ID criado no Drive.
+
+    O Apps Script executa como dono da pasta, evitando a limitação de quota
+    das contas de serviço usadas pelo Streamlit.
+    """
     try:
         extensao = mimetypes.guess_extension(arquivo.type or "") or ".png"
         if extensao == ".jpe":
             extensao = ".jpg"
-        metadata = {
-            # Mesmo padrão usado pelo Apps Script: somente o código do material.
-            "name": f"{codigo}{extensao}",
-            "parents": [ID_PASTA_FOTOS],
+
+        conteudo = arquivo.getvalue()
+        payload = {
+            "codigo": str(codigo).strip(),
+            "nome_arquivo": f"{codigo}{extensao}",
+            "mime_type": arquivo.type or "image/png",
+            "conteudo_base64": base64.b64encode(conteudo).decode("ascii"),
         }
-        media = MediaIoBaseUpload(
-            io.BytesIO(arquivo.getvalue()),
-            mimetype=arquivo.type or "image/png",
+        requisicao = Request(
+            URL_APPS_SCRIPT,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        retorno = drive_service.files().create(
-            body=metadata,
-            media_body=media,
-            fields="id",
-            supportsAllDrives=True,
-        ).execute()
-        return retorno.get("id")
+        with urlopen(requisicao, timeout=60) as resposta:
+            retorno = json.loads(resposta.read().decode("utf-8"))
+
+        if not retorno.get("sucesso") or not retorno.get("id"):
+            raise RuntimeError(retorno.get("erro", "O Apps Script não retornou o ID da foto."))
+        return retorno["id"]
+    except HTTPError as erro:
+        st.error(f"Erro no Apps Script ao enviar a foto: {erro.read().decode('utf-8', errors='replace')}")
+        return ""
+    except URLError as erro:
+        st.error(f"Não foi possível conectar ao Apps Script: {erro.reason}")
+        return ""
     except Exception as erro:
         st.error(f"Erro no upload da foto: {erro}")
         return ""
