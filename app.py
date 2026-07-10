@@ -1,5 +1,6 @@
 import datetime
 import io
+import mimetypes
 import time
 
 import gspread
@@ -103,12 +104,20 @@ def baixar_imagem_drive(valor_foto):
 
 
 def upload_foto(arquivo, codigo):
+    """Envia uma foto para a pasta do Drive e retorna somente o ID do arquivo."""
     try:
+        extensao = mimetypes.guess_extension(arquivo.type or "") or ".png"
+        if extensao == ".jpe":
+            extensao = ".jpg"
         metadata = {
-            "name": f"foto_{codigo}.png",
+            # Mesmo padrão usado pelo Apps Script: somente o código do material.
+            "name": f"{codigo}{extensao}",
             "parents": [ID_PASTA_FOTOS],
         }
-        media = MediaIoBaseUpload(io.BytesIO(arquivo.getvalue()), mimetype="image/png")
+        media = MediaIoBaseUpload(
+            io.BytesIO(arquivo.getvalue()),
+            mimetype=arquivo.type or "image/png",
+        )
         retorno = drive_service.files().create(
             body=metadata,
             media_body=media,
@@ -119,6 +128,16 @@ def upload_foto(arquivo, codigo):
     except Exception as erro:
         st.error(f"Erro no upload da foto: {erro}")
         return ""
+
+
+def atualizar_id_foto_do_material(linhas_do_item, foto_id):
+    """Grava o ID na coluna K de todas as movimentações do mesmo material."""
+    celulas = [
+        gspread.Cell(indice + 2, 11, foto_id)
+        for indice in linhas_do_item.index
+    ]
+    if celulas:
+        sheet.update_cells(celulas, value_input_option="RAW")
 
 
 def numero(valor, padrao=0.0):
@@ -270,6 +289,25 @@ with coluna_foto:
         st.info("📷 A foto possui ID cadastrado, mas não pôde ser acessada pela conta de serviço.")
     else:
         st.info("📷 Item sem foto.")
+
+    st.markdown("##### Adicionar ou substituir foto")
+    nova_foto = st.file_uploader(
+        "Selecione a foto do material",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=f"foto_material_{codigo_busca}",
+    )
+    if nova_foto and st.button("📤 Salvar foto no Google Drive"):
+        with st.spinner("Enviando foto e atualizando a planilha..."):
+            foto_id = upload_foto(nova_foto, codigo_busca)
+            if foto_id:
+                try:
+                    # Atualiza a coluna K para todo o histórico desse código.
+                    atualizar_id_foto_do_material(item_rows, foto_id)
+                    st.toast("Foto cadastrada com sucesso.", icon="✅")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as erro:
+                    st.error(f"A foto foi enviada, mas não foi possível gravar o ID na planilha: {erro}")
 
 st.divider()
 
