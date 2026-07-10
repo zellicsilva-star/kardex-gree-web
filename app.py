@@ -20,7 +20,7 @@ from supabase import create_client
 # --- CONFIGURAÇÕES ---
 ID_PLANILHA = "1Z5lmqhYJVo1SvNUclNPQ88sGmI7en5dBS3xfhj_7TrU"
 ID_PASTA_FOTOS = "1JrfpzjrhzvjHwpZkxKi162reL9nd5uAC"
-URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbz3dVZr1c_obZ4PKlzwww4nMB0Y44-K9QhhY42TrgoNh7v7A6eOffMnKLUXURjobTy9dA/exec"
+URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbwOBW8cCR5bgdVcqAaf78OI4dsYeWBnraM4hR4YWUzN53RjMCT-GcKa0VHtBtQvYUL_pg/exec"
 FUSO_HORARIO = pytz.timezone("America/Manaus")
 
 st.set_page_config(page_title="GREE - Kardex Web", page_icon="📦", layout="wide")
