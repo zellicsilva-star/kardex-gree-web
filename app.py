@@ -4,12 +4,11 @@ import io
 import json
 import mimetypes
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import gspread
 import pandas as pd
 import pytz
+import requests
 import streamlit as st
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
@@ -126,23 +125,36 @@ def upload_foto(arquivo, codigo):
             "mime_type": arquivo.type or "image/png",
             "conteudo_base64": base64.b64encode(conteudo).decode("ascii"),
         }
-        requisicao = Request(
+        # requests segue corretamente o redirecionamento do Apps Script para
+        # script.googleusercontent.com, que é onde a resposta JSON é entregue.
+        resposta = requests.post(
             URL_APPS_SCRIPT,
-            data=json.dumps(payload).encode("utf-8"),
+            data=json.dumps(payload),
             headers={"Content-Type": "application/json"},
-            method="POST",
+            timeout=60,
+            allow_redirects=True,
         )
-        with urlopen(requisicao, timeout=60) as resposta:
-            retorno = json.loads(resposta.read().decode("utf-8"))
+        resposta.raise_for_status()
+
+        texto_resposta = resposta.text.strip()
+        if not texto_resposta:
+            raise RuntimeError(
+                "O Apps Script respondeu vazio. Publique uma nova implantação "
+                "do Web App após salvar o Code.gs."
+            )
+        try:
+            retorno = resposta.json()
+        except ValueError:
+            raise RuntimeError(
+                "O Apps Script não retornou JSON. Confirme que o Web App foi "
+                "implantado com o novo Code.gs e acesso para qualquer pessoa."
+            )
 
         if not retorno.get("sucesso") or not retorno.get("id"):
             raise RuntimeError(retorno.get("erro", "O Apps Script não retornou o ID da foto."))
         return retorno["id"]
-    except HTTPError as erro:
-        st.error(f"Erro no Apps Script ao enviar a foto: {erro.read().decode('utf-8', errors='replace')}")
-        return ""
-    except URLError as erro:
-        st.error(f"Não foi possível conectar ao Apps Script: {erro.reason}")
+    except requests.RequestException as erro:
+        st.error(f"Erro de comunicação com o Apps Script: {erro}")
         return ""
     except Exception as erro:
         st.error(f"Erro no upload da foto: {erro}")
