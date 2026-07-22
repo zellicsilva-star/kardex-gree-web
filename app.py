@@ -289,8 +289,7 @@ with coluna_dados:
     ultima_atualizacao = item_atual.get("ÚLTIMA ATUALIZAÇÃO", "---")
     saldo_kardex, saldo_infor_coluna = st.columns(2)
     saldo_kardex.metric("SALDO KARDEX", item_atual["SALDO ATUAL"])
-    saldo_infor_coluna.metric("SALDO INFOR", saldo_infor, help=f"Sincronizado em: {ultima_atualizacao}")
-    saldo_infor_coluna.caption(f"🕒 Última sincronização Infor: {ultima_atualizacao}")
+    saldo_infor_coluna.metric("SALDO INFOR", ultima_atualizacao, help=f"Sincronizado em: {ultima_atualizacao}")
     st.write(f"**Localização:** {item_atual.get('LOCALIZAÇÃO', '')}")
 
     with st.expander("✏️ Editar localização"):
