@@ -290,7 +290,7 @@ with coluna_dados:
     saldo_kardex, saldo_infor_coluna = st.columns(2)
     saldo_kardex.metric("SALDO KARDEX", item_atual["SALDO ATUAL"])
     saldo_infor_coluna.metric("SALDO INFOR", saldo_infor, help=f"Sincronizado em: {ultima_atualizacao}")
-    st.caption(f"🕒 Última sincronização Infor: {ultima_atualizacao}")
+    saldo_infor_coluna.caption(f"🕒 Última sincronização Infor: {ultima_atualizacao}")
     st.write(f"**Localização:** {item_atual.get('LOCALIZAÇÃO', '')}")
 
     with st.expander("✏️ Editar localização"):
@@ -320,25 +320,6 @@ with coluna_foto:
         st.info("📷 A foto possui ID cadastrado, mas não pôde ser acessada pela conta de serviço.")
     else:
         st.info("📷 Item sem foto.")
-
-    st.markdown("##### Adicionar ou substituir foto")
-    nova_foto = st.file_uploader(
-        "Selecione a foto do material",
-        type=["png", "jpg", "jpeg", "webp"],
-        key=f"foto_material_{codigo_busca}",
-    )
-    if nova_foto and st.button("📤 Salvar foto no Google Drive"):
-        with st.spinner("Enviando foto e atualizando a planilha..."):
-            foto_id = upload_foto(nova_foto, codigo_busca)
-            if foto_id:
-                try:
-                    # Atualiza a coluna K para todo o histórico desse código.
-                    atualizar_id_foto_do_material(item_rows, foto_id)
-                    st.toast("Foto cadastrada com sucesso.", icon="✅")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as erro:
-                    st.error(f"A foto foi enviada, mas não foi possível gravar o ID na planilha: {erro}")
 
 st.divider()
 
